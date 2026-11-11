@@ -1,0 +1,6 @@
+# + verification (source spans, deterministic date resolution, quote checks)
+inherits: C2.yaml
+verification: true
+verifier:
+  calendar_crosscheck: nsdatadetector
+  notes_retrieval_threshold: TODO   # set on dev pilot only, frozen on Nov 20

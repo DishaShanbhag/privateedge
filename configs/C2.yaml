@@ -1,0 +1,6 @@
+# + hybrid local retrieval (notes only; calendar C2 = C1)
+inherits: C1.yaml
+notes_retrieval:
+  method: hybrid            # SQLite FTS5 + small embedding model
+  embedding_model: TODO     # choose at feasibility gate
+  top_k: 3

@@ -1,0 +1,131 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+\renewcommand{\ttdefault}{pcr}
+\usepackage[letterpaper,margin=0.55in,top=0.5in,bottom=0.55in]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+
+\pagestyle{plain}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2pt}
+\titleformat{\section}{\normalfont\fontsize{11}{13}\selectfont\bfseries}{\thesection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{5pt}{1.5pt}
+\setlist[itemize]{leftmargin=1.2em,itemsep=0pt,topsep=1pt,parsep=0pt}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\renewcommand{\arraystretch}{1.05}
+\hypersetup{pdftitle={PrivateEdge: Can a Phone-Sized Model Keep Up With the Cloud?},
+            pdfauthor={Ananya Singh, Disha Shanbhag, Yash Jain}}
+
+\begin{document}
+
+\begin{center}
+{\fontsize{15}{18}\selectfont\bfseries PrivateEdge: Can a Phone-Sized Model Keep Up With the Cloud?}\\[4pt]
+Ananya Singh \quad Disha Shanbhag \quad Yash Jain\\[1pt]
+Generative AI Engineering, New York University \quad Milestone 2: Project Proposal\\[1pt]
+\textit{Devices:} iPhone 16 Pro, 8\,GB (floor device); iPhone 17 Pro and 17 Pro Max, 12\,GB
+\end{center}
+\vspace{-4pt}
+
+\section{Problem}
+Cloud assistants need personal data (messages, notes, health, finances) to leave the phone, adding network delay and exposure to interception, breaches and retention; many workplaces bar them for sensitive data. Apple's Siri AI beta (14 Sept 2026) runs Apple models developed with Google on device but sends harder requests to Private Cloud Compute, and no one publishes the quality lost when work stays local. We measure that loss on two narrow tasks and test whether system design closes it within the floor device's memory, speed, heat and battery limits.
+
+\section{Tasks and specified behaviour}
+For users who will not upload personal data: (a) turn a message into a calendar event or reminder; (b) answer questions over their own notes. Non-goals: voice, chat, world knowledge, long documents, multi-tool plans.
+\begin{itemize}
+  \item \textbf{Reference time.} Each item stores a fixed timestamp and zone (default Mon 2 Nov 2026, 10:00 America/New\_York); 15\% are anchored at month or year ends or across the 14 Mar 2027 DST change.
+  \item \textbf{Conventions} (shared by system and graders). ``Next Thursday'' is the Thursday of the following Mon--Sun week; ``after 7'' starts at 7:00; meal or evening words imply PM; events default to 60 min; reminders without a time default to 09:00; a bare weekday (``Friday'') is its next occurrence after the reference time.
+  \item \textbf{Ask, don't invent.} The system returns \texttt{clarify(field)} when the date or start time is missing, AM/PM has no cue, two events are possible, cues conflict (``Thursday the 6th'' when the 6th is a Friday), or verification fails. It never adds attendees, places or title words absent from the message. Notes answers say ``the notes don't say'' when unsupported. When notes conflict, the answer reports both, citing each.
+  \item \textbf{Change log.} v0 behaviour (prompt only) is recorded first; every later change to prompt, schema, conventions or thresholds is logged with date, reason and dev-set effect.
+\end{itemize}
+
+\section{Why generative AI, and the baseline}
+Phrases like ``dinner next Thursday after 7'' must be interpreted, resolved and turned into a valid action or grounded answer. The \textbf{simplest credible baseline (B0)} is non-generative: NSDataDetector plus hand-written rules for calendar, and BM25 keyword search for notes. Only a local model meets the privacy and offline requirements.
+
+\section{System and verification}
+\textbf{Model.} Llama 3.2 3B Instruct, Q4\_K\_M (1.88\,GiB, SHA-256 pinned), in-process via llama.cpp on Metal. Apple's Foundation Model runs in a system process, so its memory cannot be attributed to our app; Qwen3 4B ($\sim$2.5\,GB) leaves no room for cache and index. Estimated peak: weights 2.0\,GB + 4K-token KV cache 0.47\,GB + buffers, embedder and index $\sim$0.3\,GB $\approx$ 2.8\,GB. The per-app limit is read from \texttt{os\_proc\_available\_memory} at the feasibility gate, and we enable the increased-memory entitlement as margin.
+
+\textbf{Feasibility gate (by Nov 4).} 10 calendar and 10 notes items on the 16 Pro with the notes index loaded and verification on; the fallback is Qwen3 1.7B in the same runtime.
+
+\textbf{Components.} Grammar-constrained decoding; hybrid local retrieval (SQLite FTS5 plus a small embedding model, top-3 chunks; before C2, notes use the same BM25 top-3 as B0); verification; opt-in escalation of verifier failures (separate configuration).
+
+\textbf{Catching semantically wrong output} (schema validity is not enough):
+\begin{itemize}
+  \item \textit{Calendar.} The model returns each field with its source span. Code checks that the span appears verbatim, resolves date and time from it deterministically, and cross-checks NSDataDetector. A mismatch, impossible value or ungrounded title word triggers \texttt{clarify}.
+  \item \textit{Notes.} Answers cite the note ID and a verbatim quote for each supporting note. Code checks that the quote exists, that every number, date and name in the answer occurs in it, and that the retrieval score clears a dev-set threshold; otherwise the system abstains.
+\end{itemize}
+
+\section{Evaluation data and scoring}
+\textbf{Data.} Per task, a 60-item dev pilot and a 300-item test set, about 20\% clarify or unanswerable, with at least 50 items from the team's anonymized messages and notes (reported separately). Synthetic items come from a model family other than the cloud baseline's.
+\textbf{Freeze.} Targets, prompts, conventions and thresholds change only on the dev pilot, then are frozen with the test-set hash; each configuration sees the test set once.
+\begin{itemize}
+  \item \textbf{Calendar.} Correct only if action type, date, start time and duration (or reminder time) match exactly in ISO 8601 with zone, and the title holds every annotated key term and no unsupported entity. A clarify item is correct only if the system asks and names a missing field.
+  \item \textbf{Notes (0--2).} 2 = correct, complete, every claim supported; 1 = correct but incomplete; 0 = wrong, any unsupported claim, or any answer to an unanswerable item. Graded blind to system; 20\% double-graded (Cohen's $\kappa \geq 0.7$); a third member adjudicates.
+  \item \textbf{Cloud baseline.} Gemini 3.8 Flash (\texttt{gemini-3.8-flash}, stable), from the model family Siri AI reportedly draws on; default temperature, thinking level low, run on 28 Nov 2026 with raw responses saved; given identical items and prompts, the same C2 retrieved chunks and the same output schema, so the gap isolates model quality. Gap = cloud $-$ local with a paired-bootstrap 95\% CI; non-inferiority is claimed only if the upper bound is below 5 points, and the gap and CI are reported either way.
+  \item \textbf{Outcome vs.\ trajectory.} Outcome scores the final action or answer. Trajectory logs each step per item: retrieval hit, whether the cited quote came from retrieved chunks, verifier verdict, and whether the system clarified, abstained or acted. We report verifier precision and recall and the silent-error rate (wrong action, no flag).
+\end{itemize}
+
+\section{Important edge cases}
+Each case is tagged in the dev and test sets and reported as its own slice. Expected behaviour follows the rules in Sections~2 and~4, at the default reference time unless stated.
+\begin{itemize}
+  \item \textbf{Calendar, resolve.} ``Next Thursday'' = Thu 12 Nov; ``dinner Friday at 7'' = Fri 6 Nov, 19:00, 60 min; ``remind me Friday to pay rent'' = Fri 6 Nov, 09:00. From Thu 31 Dec 2026, ``next Friday'' = Fri 8 Jan 2027 (year rollover). From Fri 12 Mar 2027, ``Monday at 9am'' = \texttt{2027-03-15T09:00-04:00} (new DST offset).
+  \item \textbf{Calendar, clarify.} ``Call at 7'' (no AM/PM cue), ``Thursday the 6th'' (the 6th is a Friday), ``coffee sometime'' (no date), ``lunch Tue or Wed'' (two possible events), and, from Fri 12 Mar 2027, ``Sunday at 2:30am'' (skipped by the DST change).
+  \item \textbf{Notes.} Unanswerable questions (``the notes don't say''), partly answerable ones (supported part only, scored 1), answers needing two notes (both cited), conflicting notes (both reported), paraphrases (``doctor's appointment'' against a note reading ``Dr.\ Patel, Tue 3pm'') to test hybrid retrieval against BM25, and reformatted numbers (``\$1,200'' as ``1200 dollars'') to test checker false alarms.
+  \item \textbf{System.} Inputs in the 80--200 token bucket against the latency targets, peak memory with the full notes index loaded, and thermal throttling during the sustained run.
+\end{itemize}
+
+\section{Planned experiments}
+B0 is the non-generative baseline; C0--C4 are model configurations, each adding one component to the one before it, so each component's effect on quality, latency and peak memory is measured on its own, against the cloud baseline.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}l L L@{}}
+\toprule
+\textbf{Config} & \textbf{Adds} & \textbf{Question it answers} \\
+\midrule
+B0 & Non-generative baseline & Is a model needed at all? \\
+C0 & v0: prompt only (notes: BM25 top-3, as in B0) & How large is the raw local gap? \\
+C1 & + grammar-constrained decoding & How many errors are format errors? \\
+C2 & + hybrid local retrieval (notes only; calendar C2 = C1) & How much does better retrieval close the notes gap? \\
+C3 & + verification & How many semantic errors are caught, and at what clarify cost? \\
+C4 & + opt-in escalation & What does escalation buy, and what data leaves the device? \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Targets and measurement protocol}
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}l L@{}}
+\toprule
+\textbf{Metric} & \textbf{Target on iPhone 16 Pro (provisional; frozen after the dev pilot)} \\
+\midrule
+Quality & Gap to cloud $\leq$ 5 points per task \\
+Latency (median, p95) & Calendar: first token $<$ 1\,s, verified action $<$ 3\,s. Notes: first token $<$ 1.5\,s, full answer $<$ 6\,s \\
+Sustained use & 30 requests, one per 20\,s: minute-10 decode speed $\geq$ 60\% of minute 1; plus a 10-min back-to-back stress run \\
+Memory & Peak footprint $\leq$ 3.0\,GB with retrieval and verification on \\
+Battery, privacy & \% battery per 100 actions; zero network calls on device; full airplane-mode operation \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\textbf{Controls.} Release build, airplane mode, Low Power Mode off, fixed brightness; runs start after reboot, unplugged at 80--90\% battery in nominal thermal state. One replay trace, bucketed by input length ($<$30, 30--80, 80--200 tokens), runs three times per device. Memory is sampled every 50\,ms with mmap off; energy via Instruments; privacy via App Privacy Report and packet capture.
+
+\section{Core and stretch goals}
+\begin{itemize}
+  \item \textbf{Core.} Both tasks through B0--C3 on the 16 Pro; gap to cloud with CIs; verifier precision, recall and silent-error rate; latency, memory, sustained use and battery; failure analysis by slice.
+  \item \textbf{Stretch.} C4 escalation with its privacy cost (share of requests sent and fields exposed); the same runs on the 17 Pro and 17 Pro Max; Apple's Foundation Model as an extra quality comparison.
+\end{itemize}
+
+\section{Team ownership and next steps}
+\textbf{Ananya Singh:} test sets (she tunes no prompts, keeping them clean), conventions, rubric, first grader.
+\textbf{Disha Shanbhag:} calendar dev pilot, evaluation pipeline, verification, ablations, adjudication.
+\textbf{Yash Jain:} notes dev pilot, iOS app, llama.cpp runtime, retrieval index, device measurements, second grader.
+
+\textbf{Timeline.} Nov 4: feasibility gate on the 16 Pro. Nov 8: dev pilots built, v0 recorded, B0 and C0 run. Nov 15: C1--C3 built and run on the dev pilot. Nov 19 (Milestone 3): C0--C3 tuned on the dev pilot, first failure analysis. Nov 20: freeze prompts, thresholds and targets with the test-set hash. Nov 28: single test-set run and device measurements on the 16 Pro (17 Pros if time allows). Dec 3: analysis, report and recorded demo.
+
+\end{document}

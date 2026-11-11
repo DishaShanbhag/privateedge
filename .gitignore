@@ -1,0 +1,48 @@
+# Test set: never commit (only its hash in data/test/TESTSET_SHA256)
+data/test/*
+!data/test/README.md
+!data/test/TESTSET_SHA256
+
+# Real (anonymized) messages and notes: never commit
+data/private/*
+!data/private/README.md
+
+# Model weights
+*.gguf
+*.bin
+*.safetensors
+models/
+
+# Secrets
+.env
+*.key
+secrets.*
+
+# Large raw run outputs (commit summaries only)
+results/raw/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Xcode / iOS
+ios/**/build/
+ios/**/DerivedData/
+ios/**/xcuserdata/
+*.xcuserstate
+ios/**/Pods/
+*.ipa
+*.dSYM.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LaTeX build files
+*.aux
+*.log
+*.out
+*.synctex.gz

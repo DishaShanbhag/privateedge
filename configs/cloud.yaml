@@ -1,0 +1,7 @@
+# Cloud baseline. Same items, prompts, C2 retrieved chunks and output schema as local.
+provider: google
+model: gemini-3.8-flash     # stable; log the returned model version with every response
+temperature: default
+thinking_level: low
+save_raw_responses: true
+api_key_env: GEMINI_API_KEY # set in .env, never commit

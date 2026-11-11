@@ -1,0 +1,17 @@
+# Shared settings. Each config file overrides only what it changes.
+local_model:
+  name: Llama-3.2-3B-Instruct
+  quant: Q4_K_M
+  file: models/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+  sha256: TODO_PIN_AT_FEASIBILITY_GATE
+  runtime: llama.cpp (Metal)
+  context_tokens: 4096
+  temperature: 0
+reference_time_default: "2026-11-02T10:00:00-05:00"   # Mon 2 Nov 2026, America/New_York
+timezone_default: America/New_York
+notes_retrieval:
+  method: bm25
+  top_k: 3
+constrained_decoding: false
+verification: false
+escalation: false

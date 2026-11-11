@@ -1,0 +1,6 @@
+# + opt-in escalation of verifier failures to the cloud baseline (stretch)
+inherits: C3.yaml
+escalation: true
+escalate_on: verifier_failure
+cloud: cloud.yaml
+log_fields_sent: true       # privacy cost: which fields leave the device

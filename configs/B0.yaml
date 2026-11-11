@@ -1,0 +1,5 @@
+# Non-generative baseline: is a model needed at all?
+inherits: _base.yaml
+uses_model: false
+calendar: {method: nsdatadetector_plus_rules}
+notes: {method: bm25_top1_snippet}
