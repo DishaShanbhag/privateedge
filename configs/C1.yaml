@@ -1,4 +1,6 @@
 # + grammar-constrained decoding (output always matches the schema)
 inherits: C0.yaml
 constrained_decoding: true
-grammar: schemas/calendar.gbnf
+grammars:
+  notes: schemas/notes.gbnf
+  calendar: schemas/calendar.gbnf   # TODO (Disha + Yash): actions schema, incl. expenses

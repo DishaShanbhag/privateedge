@@ -1,0 +1,7 @@
+# Notes answer: {"answer": "<text>", "citations": [{"note_id": "<id>", "quote": "<text>"}, ...]}
+# Forces exactly one JSON object with a string answer and 0-3 citations (top_k = 3).
+root      ::= "{" ws "\"answer\":" ws string "," ws "\"citations\":" ws "[" ws citations? ws "]" ws "}"
+citations ::= citation ( "," ws citation ){0,2}
+citation  ::= "{" ws "\"note_id\":" ws string "," ws "\"quote\":" ws string ws "}"
+string    ::= "\"" ( [^"\\\x7F\x00-\x1F] | "\\" ( ["\\/bfnrt] | "u" [0-9a-fA-F]{4} ) )* "\""
+ws        ::= [ \t\n]{0,2}
