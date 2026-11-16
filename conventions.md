@@ -59,7 +59,7 @@ Return `clarify(field)` instead of acting when:
 
 Allowed clarify fields: `date`, `start_time`, `ampm`, `which_event`, `conflict`, `invalid_time`, `amount`.
 
-Never add attendees, places or title words absent from the message. In scoring, a title (or expense description) word counts as absent when it is not a common function word ("with", "the", "for", ...) and no word of the message matches it, allowing for small typos and plurals.
+Never add attendees, places or title words absent from the message. In scoring, a title (or expense description) word counts as absent when it is not a common function word ("with", "the", "for", ...) and no word of the message matches it, allowing for small typos and plurals. Date and time words ("Friday", "7pm") never count as invented entities.
 
 ## Notes answers
 
