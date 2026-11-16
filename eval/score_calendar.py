@@ -16,6 +16,11 @@ Also reported: schema-valid rate; per-field accuracy (action, date, time, durati
 amount); results per slice; and accuracy on two item sets, "events and reminders" (as proposed in
 Milestone 2, with their clarify items) and "all actions". --out writes id,score,reason plus one
 0/1 column per subset, so bootstrap_gap.py can take either.
+
+Silent errors (always reported): the system ACTED (event, reminder or expense) and was wrong, with
+no clarify to warn the user. With --trajectory from a C3 run, also verifier precision and recall:
+of the acted outputs before verification, how many wrong ones the verifier flagged (recall) and
+how many of its flags were on wrong ones (precision).
 """
 import argparse
 import csv
@@ -177,16 +182,44 @@ def score_all(gold, pred):
     return rows, by_slice, fields, valid
 
 
+ACTS = ("event", "reminder", "expense")
+
+
+def silent_errors(gold, pred):
+    return sum(1 for iid, g in gold.items()
+               if (pred.get(iid) or {}).get("action") in ACTS and score_item(g, pred.get(iid))[0] == 0)
+
+
+def verifier_report(gold, traj):
+    """Verifier precision/recall over outputs that acted before verification."""
+    tp = fp = fn = tn = 0
+    for t in traj:
+        before, v = t.get("pred_before_verify"), t.get("verifier")
+        if not before or before.get("action") not in ACTS or v is None or t["id"] not in gold:
+            continue
+        wrong = score_item(gold[t["id"]], before)[0] == 0
+        flagged = not v["ok"]
+        tp += wrong and flagged
+        fp += flagged and not wrong
+        fn += wrong and not flagged
+        tn += not wrong and not flagged
+    prec = tp / (tp + fp) if tp + fp else None
+    rec = tp / (tp + fn) if tp + fn else None
+    return {"flagged_wrong": tp, "flagged_right": fp, "missed_wrong": fn, "passed_right": tn,
+            "precision": prec, "recall": rec}
+
+
 def _pct(v):
     return f"{sum(v)}/{len(v)} = {100 * sum(v) / len(v):.1f}%" if v else "n/a"
 
 
-def report(rows, by_slice, fields, valid, n):
+def report(rows, by_slice, fields, valid, n, silent=0):
     er = [r["score"] for r in rows if r["events_reminders"]]
     allv = [r["score"] for r in rows]
     print(f"Calendar accuracy, all actions:         {_pct(allv)}")
     print(f"Calendar accuracy, events and reminders: {_pct(er)}")
     print(f"Schema-valid outputs: {valid}/{n}")
+    print(f"Silent errors (acted and wrong): {silent}/{n}")
     print("Per-field accuracy (over gold items that have the field):")
     for f in ("action", "date", "time", "duration", "title", "amount"):
         if fields.get(f):
@@ -205,11 +238,19 @@ def main():
     ap.add_argument("--gold", required=True)
     ap.add_argument("--pred", required=True)
     ap.add_argument("--out", help="per-item CSV: id,score,reason,events_reminders")
+    ap.add_argument("--trajectory", help="a C3 _trajectory.jsonl, for verifier precision and recall")
     a = ap.parse_args()
 
     gold, pred = load(a.gold), load(a.pred)
     rows, by_slice, fields, valid = score_all(gold, pred)
-    report(rows, by_slice, fields, valid, len(gold))
+    report(rows, by_slice, fields, valid, len(gold), silent_errors(gold, pred))
+    if a.trajectory:
+        with open(a.trajectory) as f:
+            vr = verifier_report(gold, [json.loads(line) for line in f if line.strip()])
+        fmt = lambda x: "n/a" if x is None else f"{x:.2f}"
+        print(f"Verifier: precision {fmt(vr['precision'])}, recall {fmt(vr['recall'])}  "
+              f"(flagged wrong {vr['flagged_wrong']}, flagged right {vr['flagged_right']}, "
+              f"missed wrong {vr['missed_wrong']}, passed right {vr['passed_right']})")
     if a.out:
         with open(a.out, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=["id", "score", "reason", "events_reminders"])

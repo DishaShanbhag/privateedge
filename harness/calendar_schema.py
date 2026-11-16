@@ -92,12 +92,12 @@ class Clarify(_Strict):
     action: Literal["clarify"]
     fields: list[ClarifyField] = Field(min_length=1, max_length=3)
 
-    @field_validator("fields")
+    @field_validator("fields", mode="before")
     @classmethod
-    def _unique(cls, v):
-        if len(set(v)) != len(v):
-            raise ValueError("duplicate clarify fields")
-        return v
+    def _dedupe(cls, v):
+        # A grammar cannot forbid repeats, and ["date", "date"] still names the field, so repeats
+        # are dropped (first occurrence kept) rather than failing the whole output.
+        return list(dict.fromkeys(v)) if isinstance(v, list) else v
 
 
 Action = Annotated[Union[Event, Reminder, Expense, NoAction, Clarify], Field(discriminator="action")]

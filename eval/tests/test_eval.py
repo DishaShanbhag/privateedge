@@ -127,3 +127,16 @@ def test_bootstrap_subset_column(tmp_path):
     (tmp_path / "s.csv").write_text("id,score,reason,events_reminders\na,1,ok,1\nb,0,wrong_amount,0\n")
     assert read(tmp_path / "s.csv") == {"a": 1.0, "b": 0.0}
     assert read(tmp_path / "s.csv", "events_reminders") == {"a": 1.0}
+
+
+def test_silent_errors_and_verifier_report():
+    from score_calendar import silent_errors, verifier_report
+    gold = {"e": EVENT, "n": NONE}
+    wrong = {"action": "event", "start": "2026-11-06T07:00:00-05:00", "duration_min": 60, "title": "dinner"}
+    right = {**wrong, "start": "2026-11-06T19:00:00-05:00"}
+    assert silent_errors(gold, {"e": wrong, "n": {"action": "event", "start": "x"}}) == 2
+    assert silent_errors(gold, {"e": {"action": "clarify", "fields": ["date"]}, "n": {"action": "none"}}) == 0
+    traj = [{"id": "e", "pred_before_verify": wrong, "verifier": {"ok": False}},
+            {"id": "n", "pred_before_verify": right, "verifier": {"ok": False}}] 
+    r = verifier_report({"e": EVENT, "n": EVENT}, traj)
+    assert r["flagged_wrong"] == 1 and r["flagged_right"] == 1 and r["precision"] == 0.5 and r["recall"] == 1.0

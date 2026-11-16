@@ -268,3 +268,87 @@ def test_nsdd_finds_date_text_with_correct_offsets():
     for m in nsdd.detect_dates(msg):
         assert msg[m.start:m.end] == m.text
     assert any("Friday" in m.text for m in nsdd.detect_dates(msg))
+
+
+# ---------------------------------------------------------------- C3 verifier
+
+from verify_calendar import check, make_verifier  # noqa: E402
+
+DINNER = _item("dinner Friday at 7?")
+
+
+def _ev(**over):
+    obj = {"action": "event", "title": "Dinner", "start": "2026-11-06T19:00:00-05:00", "duration_min": 60,
+           "spans": {"date": "Friday", "time": "at 7", "duration": None, "title": "dinner"}}
+    obj.update(over)
+    return parse_action(json.dumps(obj))[0]
+
+
+def test_verifier_passes_correct_event():
+    assert check(DINNER, _ev())["ok"]
+
+
+@pytest.mark.parametrize("over,failed", [
+    ({"start": "2026-11-06T07:00:00-05:00"}, "resolve"),                  # AM instead of PM
+    ({"start": "2026-11-07T19:00:00-05:00"}, "resolve"),                  # wrong day
+    ({"duration_min": 90}, "resolve"),
+    ({"spans": {"date": "Saturday", "time": "at 7", "duration": None, "title": "dinner"}}, "span_verbatim"),
+    ({"spans": {"date": None, "time": "at 7", "duration": None, "title": "dinner"}}, "spans_present"),
+    ({"title": "Dinner at Nobu"}, "title"),
+])
+def test_verifier_catches_wrong_values(over, failed):
+    v = check(DINNER, _ev(**over))
+    assert not v["ok"] and failed in v["failed"], v
+
+
+def test_verifier_asks_when_conventions_say_ask():
+    v = check(_item("call at 7"), _ev(title="call", spans={"date": None, "time": "at 7", "duration": None, "title": "call"}))
+    assert not v["ok"] and v["clarify_field"] in ("date", "ampm")
+
+
+def test_verifier_checks_expense_amount_against_text():
+    item = _item("spent $23.50 on lunch yesterday")
+    good = {"action": "expense", "amount": "23.50", "currency": "USD", "description": "lunch", "date": "2026-11-01",
+            "spans": {"amount": "$23.50", "date": "yesterday", "description": "lunch"}}
+    assert check(item, parse_action(json.dumps(good))[0])["ok"]
+    bad = check(item, parse_action(json.dumps({**good, "amount": "25.30"}))[0])
+    assert not bad["ok"] and bad["clarify_field"] == "amount"
+
+
+def test_verifier_leaves_none_and_clarify_alone():
+    assert check(DINNER, parse_action('{"action":"none"}')[0])["ok"]
+    assert check(DINNER, parse_action('{"action":"clarify","fields":["date"]}')[0])["ok"]
+
+
+def test_recovery_options():
+    wrong = _ev(start="2026-11-06T07:00:00-05:00")
+    a, v = make_verifier({"verifier": {"recovery": "clarify"}})(DINNER, wrong)
+    assert a.action == "clarify" and v["recovery"] == "clarify"
+    a, v = make_verifier({"verifier": {"recovery": "b0"}})(DINNER, wrong)
+    assert a.action == "event" and a.start.isoformat() == "2026-11-06T19:00:00-05:00" and v["recovery"] == "b0"
+    a, v = make_verifier({"verifier": {"recovery": "repair"}})(DINNER, wrong)
+    assert a is wrong and v["recovery"] == "repair_pending"
+
+
+# ---------------------------------------------------------------- C1 grammar (needs the model file)
+
+MODEL = ROOT / "models/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+
+
+@pytest.mark.skipif(not MODEL.exists(), reason="model weights not downloaded")
+def test_grammar_forces_schema_valid_output_even_off_task():
+    # LlamaGrammar.from_file does NOT raise on a bad grammar (it logs and returns an unusable one),
+    # so the only real check is generating with it.
+    from llama_cpp import Llama, LlamaGrammar
+    llm = Llama(model_path=str(MODEL), n_ctx=1024, n_gpu_layers=-1, seed=0, verbose=False)
+    grammar = LlamaGrammar.from_file(str(ROOT / "schemas/calendar.gbnf"), verbose=False)
+    for prompt in ["Say hello in French.", "dinner Friday at 7? Today is Mon 2 Nov 2026, America/New_York."]:
+        out = llm.create_chat_completion(messages=[{"role": "user", "content": prompt}], temperature=0,
+                                         max_tokens=200, grammar=grammar)["choices"][0]["message"]["content"]
+        action, err = parse_action(out)
+        assert err is None, (prompt, out, err)
+
+
+def test_repeated_clarify_fields_are_dropped_not_rejected():
+    a, err = parse_action('{"action":"clarify","fields":["date","date","ampm"]}')
+    assert err is None and a.fields == ["date", "ampm"]

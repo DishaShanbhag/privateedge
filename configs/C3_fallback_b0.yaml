@@ -1,0 +1,5 @@
+# Ablation of C3's recovery step: when verification fails, take B0's action instead of asking.
+# Not a ladder step; compared against C3 on the same items.
+inherits: C3.yaml
+verifier:
+  recovery: b0
