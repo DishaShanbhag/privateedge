@@ -231,3 +231,40 @@ def test_dev_pilot_is_valid_and_covered():
     items = [json.loads(line) for line in open(ROOT / "data/dev/calendar_dev.jsonl") if line.strip()]
     assert len(items) == 60
     assert validate(items) == [] and coverage(items) == []
+
+
+# ---------------------------------------------------------------- B0
+
+import nsdd  # noqa: E402
+from b0_calendar import run as b0_run  # noqa: E402
+
+
+def _item(msg, ref="2026-11-02T10:00:00-05:00"):
+    return {"id": "t", "message": msg, "reference_time": ref, "tz": NY, "slice": [], "gold": {}}
+
+
+@pytest.mark.parametrize("msg,want", [
+    ("dinner Friday at 7?", {"action": "event", "start": "2026-11-06T19:00:00-05:00", "duration_min": 60}),
+    ("remind me Friday to pay rent", {"action": "reminder", "start": "2026-11-06T09:00:00-05:00"}),
+    ("call at 7", {"action": "clarify", "fields": ["date"]}),
+    ("spent $23.50 on lunch yesterday", {"action": "expense", "amount": "23.50", "date": "2026-11-01"}),
+    ("thanks, see you then!", {"action": "none"}),
+])
+def test_b0_rules(msg, want):
+    pred = b0_run([_item(msg)], detector="rules")[0][0]
+    assert {k: pred.get(k) for k in want} == want
+
+
+def test_b0_titles_only_use_message_words():
+    from score_calendar import unsupported_words
+    for msg in ["dinner Friday at 7?", "Hey! Want to grab dinner Friday at 7:30? Let me know.", "uber 18 bucks"]:
+        p = b0_run([_item(msg)], detector="rules")[0][0]
+        assert unsupported_words(p.get("title") or p.get("description"), msg) == []
+
+
+@pytest.mark.skipif(not nsdd.available(), reason="NSDataDetector needs macOS + pyobjc")
+def test_nsdd_finds_date_text_with_correct_offsets():
+    msg = "₹500 for the auto, dinner Friday at 7?"
+    for m in nsdd.detect_dates(msg):
+        assert msg[m.start:m.end] == m.text
+    assert any("Friday" in m.text for m in nsdd.detect_dates(msg))
