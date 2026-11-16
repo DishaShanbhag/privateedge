@@ -297,8 +297,31 @@ def test_verifier_passes_correct_event():
     ({"title": "Dinner at Nobu"}, "title"),
 ])
 def test_verifier_catches_wrong_values(over, failed):
-    v = check(DINNER, _ev(**over))
+    v = check(DINNER, _ev(**over), span_policy="strict")
     assert not v["ok"] and failed in v["failed"], v
+    assert not check(DINNER, _ev(**over))["ok"]  # v2 (default) still rejects every one of these
+
+
+def test_v2_ignores_spans_copied_from_the_now_line_when_value_is_right():
+    # Dev run 1 false alarm: no date in the message; the model's date span came from the "Now:" line.
+    item = _item("uber 18 bucks")
+    obj = {"action": "expense", "amount": "18.00", "currency": "USD", "description": "uber", "date": "2026-11-02",
+           "spans": {"amount": "18 bucks", "date": "Monday, 2 November 2026", "description": "uber"}}
+    a = parse_action(json.dumps(obj))[0]
+    assert not check(item, a, span_policy="strict")["ok"]
+    assert check(item, a)["ok"]
+    wrong = parse_action(json.dumps({**obj, "date": "2026-11-01"}))[0]
+    assert not check(item, wrong)["ok"]  # the default (today) still has to match
+
+
+def test_v2_reads_date_and_time_from_both_spans():
+    # Dev run 1 false alarm: time words filed under the date span.
+    item = _item("remind me tomorrow at noon to call grandma", "2026-12-31T20:00:00-05:00")
+    obj = {"action": "reminder", "title": "call grandma", "start": "2027-01-01T12:00:00-05:00",
+           "spans": {"date": "tomorrow at noon", "time": "call grandma", "title": "call grandma"}}
+    a = parse_action(json.dumps(obj))[0]
+    assert not check(item, a, span_policy="strict")["ok"]
+    assert check(item, a)["ok"]
 
 
 def test_verifier_asks_when_conventions_say_ask():

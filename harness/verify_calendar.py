@@ -1,8 +1,9 @@
 """C3: code-based verification of a schema-valid action. Detects semantically wrong values.
 
 Checks (each recorded in the verdict, so its value can be measured on its own):
-  span_verbatim   every span the model returned appears verbatim in the message
-  spans_present   an event has date and time spans, a reminder a date span, an expense an amount span
+  span_verbatim   (span_policy: strict, v1) every span appears verbatim in the message, and an event
+                  has date and time spans; with drop_and_merge (v2, default) spans not in the message
+                  are ignored and date/time are read from both spans together (see CHANGELOG)
   resolve         re-resolving the spans with the conventions (resolver.py) gives the same start and
                   duration (events/reminders) or the same amount, currency and date (expenses);
                   if the conventions say ask, the verifier asks
@@ -33,12 +34,13 @@ def _spans(action):
     return action.spans.model_dump() if hasattr(action, "spans") else {}
 
 
-def check(item, action, crosscheck=None):
+def check(item, action, crosscheck=None, span_policy="drop_and_merge"):
     """-> verdict dict: {"ok", "failed": [check names], "clarify_field", "details"}."""
     msg = item["message"]
     if not isinstance(action, (Event, Reminder, Expense)):
         return {"ok": True, "failed": [], "clarify_field": None, "details": {}}
     spans, failed, details, field = _spans(action), [], {}, None
+    orig_date = spans.get("date")
 
     def fail(name, fld, why):
         nonlocal field
@@ -46,16 +48,30 @@ def check(item, action, crosscheck=None):
         details[name] = why
         field = field or fld
 
-    for k, s in spans.items():
-        if s is not None and s.lower() not in msg.lower():
+    kind = action.action
+    not_verbatim = {k: s for k, s in spans.items() if s is not None and s.lower() not in msg.lower()}
+    if span_policy == "strict":
+        # v1: any span not copied from the message fails.
+        for k, s in not_verbatim.items():
             fail("span_verbatim", FIELD_FOR.get(k, "conflict"), f"{k}={s!r}")
-    need = {"event": ["date", "time"], "reminder": ["date"], "expense": ["amount"]}[action.action]
+        used = spans
+    else:
+        # v2 (drop_and_merge): a span not in the message is ignored, so the conventions' defaults
+        # apply; date and time are read from the date and time spans together, so a span filed
+        # under the wrong key does not matter. The value must still match exactly.
+        if not_verbatim:
+            details["dropped_spans"] = not_verbatim
+        used = {k: (None if k in not_verbatim else s) for k, s in spans.items()}
+        if kind in ("event", "reminder"):
+            joined = " ".join(s for s in (used.get("date"), used.get("time")) if s) or None
+            used = {**used, "date": joined, "time": joined}
+    need = {"event": ["date", "time"], "reminder": ["date"], "expense": ["amount"]}[kind]
     for k in need:
-        if not spans.get(k):
+        if span_policy == "strict" and not used.get(k):
             fail("spans_present", FIELD_FOR[k], f"no {k} span")
 
-    kind = action.action
-    r = resolve_action(kind, spans, msg, item["reference_time"], item["tz"])
+    r = resolve_action(kind, used, msg, item["reference_time"], item["tz"])
+    spans = used
     if r.clarify:
         fail("resolve", r.clarify, f"conventions say clarify({r.clarify})")
     elif kind == "expense":
@@ -74,13 +90,14 @@ def check(item, action, crosscheck=None):
     if words:
         fail("title", "conflict", f"not in message: {words}")
 
-    if crosscheck == "nsdatadetector" and kind in ("event", "reminder") and spans.get("date"):
+    if crosscheck == "nsdatadetector" and kind in ("event", "reminder") and orig_date \
+            and orig_date.lower() in msg.lower():
         import nsdd
         if nsdd.available():
             low = msg.lower()
-            pos = low.find(spans["date"].lower())
+            pos = low.find(orig_date.lower())
             hits = nsdd.detect_dates(msg)
-            if pos >= 0 and not any(h.start < pos + len(spans["date"]) and pos < h.end for h in hits):
+            if pos >= 0 and not any(h.start < pos + len(orig_date) and pos < h.end for h in hits):
                 fail("nsdd", "date", "NSDataDetector finds no date at the date span")
     return {"ok": not failed, "failed": failed, "clarify_field": field, "details": details}
 
@@ -90,9 +107,10 @@ def make_verifier(cfg):
     vcfg = cfg.get("verifier") or {}
     crosscheck = vcfg.get("calendar_crosscheck")
     recovery = vcfg.get("recovery", "clarify")
+    span_policy = vcfg.get("span_policy", "drop_and_merge")
 
     def verify(item, action):
-        verdict = check(item, action, crosscheck)
+        verdict = check(item, action, crosscheck, span_policy)
         verdict["recovery"] = None
         if verdict["ok"]:
             return action, verdict
@@ -109,4 +127,5 @@ def make_verifier(cfg):
         return Clarify(action="clarify", fields=[verdict["clarify_field"]]), verdict
 
     verify.recovery = recovery
+    verify.span_policy = span_policy
     return verify

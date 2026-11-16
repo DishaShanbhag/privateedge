@@ -3,5 +3,6 @@ inherits: C2.yaml
 verification: true
 verifier:
   calendar_crosscheck: nsdatadetector   # null turns the NSDataDetector check off (ablation)
+  span_policy: drop_and_merge          # v2 after dev run 1; strict = v1 (see CHANGELOG)
   recovery: clarify                     # as proposed; b0 and repair are ablations (C3_fallback_b0, C3_repair)
   notes_retrieval_threshold: TODO   # set on dev pilot only, frozen on Nov 20

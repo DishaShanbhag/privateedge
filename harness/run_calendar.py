@@ -209,7 +209,8 @@ def run(items, model, system, cfg, verifier=None):
                     v2 = {"ok": False, "failed": ["schema"], "recovery": "clarify"}
                 else:
                     from verify_calendar import check
-                    v2 = check(it, action2, (cfg.get("verifier") or {}).get("calendar_crosscheck"))
+                    vc = cfg.get("verifier") or {}
+                    v2 = check(it, action2, vc.get("calendar_crosscheck"), vc.get("span_policy", "drop_and_merge"))
                     if not v2["ok"]:
                         action2 = Clarify(action="clarify", fields=[v2["clarify_field"]])
                         v2["recovery"] = "clarify"
