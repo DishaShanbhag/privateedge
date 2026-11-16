@@ -173,3 +173,61 @@ def test_invalid_output_pred_is_marked():
     assert to_pred("x", None) == {"id": "x", "action": None, "schema_valid": False}
     a, _ = parse_action('{"action":"clarify","fields":["ampm","date"]}')
     assert isinstance(a, Clarify) and to_pred("x", a)["fields"] == ["ampm", "date"]
+
+
+# ---------------------------------------------------------------- data validator
+
+import copy  # noqa: E402
+import json  # noqa: E402
+
+from validate_calendar_data import coverage, validate, validate_item  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[2]
+GOOD = {"id": "t", "message": "dinner Friday at 7?", "reference_time": "2026-11-02T10:00:00-05:00",
+        "tz": NY, "slice": ["resolve"],
+        "gold": {"action": "event", "start": "2026-11-06T19:00:00-05:00", "duration_min": 60,
+                 "title_terms": ["dinner"], "spans": {"date": "Friday", "time": "at 7", "duration": None}}}
+
+
+def _bad(path, value):
+    it = copy.deepcopy(GOOD)
+    *keys, last = path
+    d = it
+    for k in keys:
+        d = d[k]
+    d[last] = value
+    return validate_item(it)
+
+
+def test_validator_accepts_good_item():
+    assert validate_item(GOOD) == []
+
+
+@pytest.mark.parametrize("path,value,expect", [
+    (("gold", "start"), "2026-11-06T07:00:00-05:00", "start"),             # wrong AM/PM
+    (("gold", "start"), "2026-11-06T19:00:00-04:00", "start"),             # wrong offset
+    (("gold", "duration_min"), 30, "duration_min"),
+    (("gold", "spans", "date"), "Saturday", "not verbatim"),
+    (("gold", "title_terms"), ["lunch"], "not in message"),
+    (("reference_time",), "2026-11-02T10:00:00-04:00", "offset"),         # EDT offset in November
+])
+def test_validator_catches_wrong_gold(path, value, expect):
+    errs = _bad(path, value)
+    assert errs and any(expect in e for e in errs), errs
+
+
+def test_validator_catches_clarify_that_conventions_would_resolve():
+    it = copy.deepcopy(GOOD)
+    it["gold"] = {"action": "clarify", "fields": ["ampm"], "intended": "event", "spans": {"date": "Friday", "time": "at 7"}}
+    assert validate_item(it)  # "dinner" is an AM/PM cue, so asking is wrong
+
+
+def test_validator_flags_duplicates_and_missing_coverage():
+    assert any("duplicate" in e for e in validate([GOOD, GOOD]))
+    assert any("invalid_time" in p for p in coverage([GOOD]))
+
+
+def test_dev_pilot_is_valid_and_covered():
+    items = [json.loads(line) for line in open(ROOT / "data/dev/calendar_dev.jsonl") if line.strip()]
+    assert len(items) == 60
+    assert validate(items) == [] and coverage(items) == []

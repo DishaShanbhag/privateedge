@@ -4,17 +4,37 @@
 
 ## Calendar item (`calendar_dev.jsonl`)
 
+Each item is one message plus the action the system should take. Gold values were typed by hand; `python harness/validate_calendar_data.py` recomputes every one of them from `conventions.md` and fails on any mismatch.
+
 ```json
 {"id": "cal-001", "message": "dinner Friday at 7?", "reference_time": "2026-11-02T10:00:00-05:00",
  "tz": "America/New_York", "slice": ["resolve"],
- "gold": {"action": "event", "start": "2026-11-06T19:00:00-05:00", "duration_min": 60, "title_terms": ["dinner"]}}
+ "gold": {"action": "event", "start": "2026-11-06T19:00:00-05:00", "duration_min": 60, "title_terms": ["dinner"],
+          "spans": {"date": "Friday", "time": "at 7", "duration": null}}}
 ```
 
-A clarify item uses `"gold": {"action": "clarify", "fields": ["ampm"]}`.
-Allowed fields: `date`, `start_time`, `ampm`, `which_event`, `conflict`, `invalid_time`.
+The five gold shapes:
 
-A predictions file has one line per item: `{"id": "...", "action": "...", "start": "...", "duration_min": 60, "title": "..."}`
-or `{"id": "...", "action": "clarify", "fields": ["ampm"]}`.
+| `action` | Gold fields |
+|---|---|
+| `event` | `start` (ISO 8601 with offset), `duration_min`, `title_terms`, `spans` {date, time, duration} |
+| `reminder` | `start`, `title_terms`, `spans` {date, time} |
+| `expense` | `amount` (string, two decimals), `currency` (ISO 4217), `date` (YYYY-MM-DD), `description_terms`, `spans` {amount, date} |
+| `none` | nothing else |
+| `clarify` | `fields` (any of them is accepted), `intended` (event, reminder or expense), `spans` |
+
+`spans` are the exact words of the message each gold value comes from (`null` when the message has none and a default applies). Allowed clarify fields: `date`, `start_time`, `ampm`, `which_event`, `conflict`, `invalid_time`, `amount`.
+
+`slice` tags: `resolve`, `reminder`, `clarify`, `expense`, `none`, `duration`, `dst` (around the 14 Mar 2027 change), `month_end` (month and year ends) and `messy` (typos, slang, several sentences).
+
+A calendar predictions file (`results/<config>_calendar_dev_pred.jsonl`) has one line per item, in the shape `harness/calendar_schema.py:to_pred` writes:
+
+```json
+{"id": "cal-001", "action": "event", "schema_valid": true, "start": "2026-11-06T19:00:00-05:00", "duration_min": 60, "title": "Dinner"}
+{"id": "cal-041", "action": "expense", "schema_valid": true, "amount": "23.50", "currency": "USD", "description": "lunch", "date": "2026-11-01"}
+{"id": "cal-003", "action": "clarify", "schema_valid": true, "fields": ["ampm"]}
+{"id": "cal-055", "action": null, "schema_valid": false}
+```
 
 ## Notes corpus (`notes_corpus.jsonl`)
 

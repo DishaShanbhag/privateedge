@@ -176,7 +176,10 @@ def _find_dates(text):
 
 
 def _looks_like_day(text, m):
-    # "sun" and "sat" are also ordinary words; accept them only next to a time or "on".
+    # "sun" and "sat" are also ordinary words; accept them only next to a time or "on",
+    # capitalised, or when the text is the word alone (an annotated or model-returned span).
+    if text.strip(" .,!?").lower() == m.group(0).strip(" .").lower():
+        return True
     after = text[m.end():m.end() + 12].lower()
     before = text[max(0, m.start() - 4):m.start()].lower()
     return bool(re.match(r"\s*(at|@|\d|morning|night|afternoon|evening)", after)) or before.strip().endswith("on") \
@@ -391,3 +394,52 @@ def parse_amount(text, default_currency="USD", allow_bare=False) -> Parse:
     if len({v for v, _ in vals}) > 1:
         return Parse(clarify="amount", matched=" / ".join(t for _, t in vals))
     return Parse(value=vals[0][0], matched=vals[0][1])
+
+
+# ---------------------------------------------------------------- whole actions
+
+def local_ref(reference_time: str, tz: str) -> datetime:
+    return datetime.fromisoformat(reference_time).astimezone(ZoneInfo(tz))
+
+
+def resolve_action(kind, spans, message, reference_time, tz) -> Parse:
+    """Resolve an event, reminder or expense from its source spans, applying every default and
+    clarify rule in conventions.md. -> Parse(value=dict of resolved fields) or Parse(clarify=field).
+
+    event:    {"start": iso, "duration_min": int}
+    reminder: {"start": iso}
+    expense:  {"amount": "23.50", "currency": "USD", "date": "2026-11-01"}
+    """
+    spans = spans or {}
+    ref = local_ref(reference_time, tz)
+    if kind == "expense":
+        a = parse_amount(spans.get("amount"), allow_bare=True)
+        if a.clarify or a.value is None:
+            return Parse(clarify="amount")
+        d = parse_date(spans.get("date"), ref.date(), past=True)
+        if d.clarify:
+            return Parse(clarify=d.clarify)
+        amount, cur = a.value
+        return Parse(value={"amount": f"{amount:.2f}", "currency": cur, "date": (d.value or ref.date()).isoformat()})
+
+    if kind not in ("event", "reminder"):
+        raise ValueError(kind)
+    d = parse_date(spans.get("date"), ref.date())
+    if d.clarify:
+        return Parse(clarify=d.clarify)
+    if d.value is None:
+        return Parse(clarify="date")
+    t = parse_time(spans.get("time"), message)
+    if t.clarify:
+        return Parse(clarify=t.clarify)
+    if t.value is None:
+        if kind == "event":
+            return Parse(clarify="start_time")
+        t = Parse(value=TimeValue(time(9, 0)))  # reminder with no time
+    c = combine(d.value, t.value.start, tz)
+    if c.clarify:
+        return c
+    out = {"start": iso(c.value)}
+    if kind == "event":
+        out["duration_min"] = parse_duration(spans.get("duration")).value or t.value.duration_min or 60
+    return Parse(value=out)
