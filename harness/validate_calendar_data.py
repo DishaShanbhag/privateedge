@@ -1,6 +1,12 @@
 """Check the calendar dev pilot: recompute every gold value from the conventions and fail on any mismatch.
 
-Usage: python harness/validate_calendar_data.py [--items data/dev/calendar_dev.jsonl]
+Usage: python harness/validate_calendar_data.py [--items data/dev/calendar_dev.jsonl] [--mode strict|review]
+
+--mode strict (default, our dev pilot): any disagreement with the conventions code fails.
+--mode review (data written by someone who has not seen resolver.py, e.g. blind dev items or the
+test set): disagreements are listed for a person to check against conventions.md and do not fail,
+so the data is never bent toward what our code can parse. Structural errors (ids, offsets, spans
+not in the message, bad fields) still fail in both modes.
 
 Gold values were typed by hand. This script re-derives each one with resolver.py (zoneinfo for
 offsets and DST) from the item's annotated source spans, so a mismatch means either the label or
@@ -62,7 +68,7 @@ def validate_item(it):
             return errors
         r = resolve_action(g["intended"], g.get("spans"), msg, it["reference_time"], it["tz"])
         if r.clarify not in g.get("fields", []):
-            errors.append(f"{iid}: conventions resolve to {r.clarify or r.value!r}, gold asks {g.get('fields')}")
+            errors.append(f"{iid}: RESOLVE conventions resolve to {r.clarify or r.value!r}, gold asks {g.get('fields')}")
         return errors
 
     terms = g.get("description_terms" if action == "expense" else "title_terms") or []
@@ -73,14 +79,14 @@ def validate_item(it):
             errors.append(f"{iid}: key term {t!r} not in message")
     r = resolve_action(action, g.get("spans"), msg, it["reference_time"], it["tz"])
     if r.clarify:
-        errors.append(f"{iid}: conventions say clarify({r.clarify}), gold is {action}")
+        errors.append(f"{iid}: RESOLVE conventions say clarify({r.clarify}), gold is {action}")
         return errors
     want = {k: g.get(k) for k in r.value}
     if action == "event" and g.get("duration_min") is None:
         want["duration_min"] = 60
     for k, v in r.value.items():
         if want[k] != v:
-            errors.append(f"{iid}: {k} gold {want[k]!r} != conventions {v!r}")
+            errors.append(f"{iid}: RESOLVE {k} gold {want[k]!r} != conventions {v!r}")
     return errors
 
 
@@ -111,9 +117,17 @@ def coverage(items):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--items", default="data/dev/calendar_dev.jsonl")
+    ap.add_argument("--mode", choices=["strict", "review"], default="strict")
+    ap.add_argument("--no-coverage", action="store_true", help="skip slice-mix checks (small extra sets)")
     a = ap.parse_args()
     items = load(a.items)
-    errors = validate(items) + coverage(items)
+    errors = validate(items) + ([] if a.no_coverage else coverage(items))
+    if a.mode == "review":
+        review = [e for e in errors if "RESOLVE" in e]
+        errors = [e for e in errors if "RESOLVE" not in e]
+        for e in review:
+            print("NEEDS HUMAN CHECK", e)
+        print(f"{len(review)} items for a person to check against conventions.md")
     print(f"{len(items)} items")
     print("actions:", dict(Counter(it["gold"]["action"] for it in items)))
     print("slices:", dict(Counter(s for it in items for s in it["slice"])))

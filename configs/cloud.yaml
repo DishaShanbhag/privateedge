@@ -6,6 +6,6 @@ thinking_level: low
 save_raw_responses: true
 api_key_env: GEMINI_API_KEY # set in .env, never commit
 max_retries: 3              # only for 429/500/503 (capacity), with backoff; logged as attempts
-price_usd_per_mtok:         # from Google's pricing page on the run date; thinking tokens bill as output
-  input: null                # TODO: fill before the cloud run, cost is not computed while null
-  output: null
+price_usd_per_mtok:         # Gemini API standard tier, introductory price valid to 2026-12-31 (checked 2026-11-16,
+  input: 0.75                # ai.google.dev/gemini-api/docs/pricing); from 2027-01-01: 1.50 in / 7.50 out.
+  output: 3.75               # Thinking tokens bill as output.

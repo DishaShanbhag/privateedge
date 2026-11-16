@@ -239,9 +239,17 @@ def main():
     ap.add_argument("--pred", required=True)
     ap.add_argument("--out", help="per-item CSV: id,score,reason,events_reminders")
     ap.add_argument("--trajectory", help="a C3 _trajectory.jsonl, for verifier precision and recall")
+    ap.add_argument("--allow-incomplete", action="store_true",
+                    help="score even if some items are missing or failed for infrastructure reasons")
     a = ap.parse_args()
 
     gold, pred = load(a.gold), load(a.pred)
+    infra = [i for i, p in pred.items() if p.get("error")]
+    missing = [i for i in gold if i not in pred]
+    if (infra or missing) and not a.allow_incomplete:
+        raise SystemExit(f"Refusing to score: {len(infra)} items failed for infrastructure reasons "
+                         f"(e.g. {infra[:3]}) and {len(missing)} are missing. Re-run them "
+                         f"(run_calendar.py --resume), or pass --allow-incomplete.")
     rows, by_slice, fields, valid = score_all(gold, pred)
     report(rows, by_slice, fields, valid, len(gold), silent_errors(gold, pred))
     if a.trajectory:

@@ -101,6 +101,20 @@ class LocalModel:
 
 # ---------------------------------------------------------------- cloud (Gemini)
 
+class QuotaExhausted(RuntimeError):
+    """A quota that will not reset within minutes (e.g. the free tier's requests per day).
+    Retrying only burns requests, so the run stops; re-run later with --resume."""
+
+
+def _retry_delay_s(e):
+    """The server's RetryInfo delay in seconds, if any."""
+    det = getattr(e, "details", None)
+    for d in (det.get("error", {}).get("details", []) if isinstance(det, dict) else []):
+        if "RetryInfo" in d.get("@type", "") and d.get("retryDelay", "").endswith("s"):
+            return float(d["retryDelay"][:-1])
+    return None
+
+
 class GeminiModel:
     def __init__(self, cloud_cfg, timeout_s, max_tokens, structured):
         from dotenv import load_dotenv
@@ -153,6 +167,10 @@ class GeminiModel:
                 # do not, and are treated like a 503: retried, then logged as this item's error.
                 code = getattr(e, "code", None)
                 last_err = f"{code} {getattr(e, 'status', '')}".strip() if code else type(e).__name__
+                delay = _retry_delay_s(e)
+                if code == 429 and delay and delay > 300:
+                    raise QuotaExhausted(f"{last_err}: quota resets in {delay / 3600:.1f} h. "
+                                         f"{getattr(e, 'message', '')[:200]}") from e
                 if (code in (429, 500, 503) or code is None) and attempts <= self.retries:
                     time.sleep(min(60, 4 * 2 ** (attempts - 1)))
                     continue
@@ -192,7 +210,11 @@ REPAIR_NOTE = ("Your previous answer failed a check: {why}. Reply again with one
 def run(items, model, system, cfg, verifier=None):
     preds, traj = [], []
     for i, it in enumerate(items, 1):
-        raw, info = model(system, user_message(it))
+        try:
+            raw, info = model(system, user_message(it))
+        except QuotaExhausted as e:
+            print(f"\nSTOPPED at {it['id']} ({i - 1}/{len(items)} done): {e}")
+            break
         action, err = parse_action(raw)
         before = to_pred(it["id"], action)
         verdict, repair = None, None
@@ -217,6 +239,8 @@ def run(items, model, system, cfg, verifier=None):
                 action, repair = action2, {"raw_output": raw2, "parse_error": err2, "verifier": v2, **info2}
                 verdict["recovery"] = "repair"
         pred = to_pred(it["id"], action)
+        if info.get("error"):
+            pred["error"] = info["error"]  # infrastructure failure: re-run, never score as a model error
         preds.append(pred)
         traj.append({"id": it["id"], "config": cfg["name"], "backend": model.name,
                      "raw_output": raw, "schema_valid": err is None, "parse_error": err,
@@ -237,10 +261,18 @@ def main():
     ap.add_argument("--limit", type=int)
     ap.add_argument("--max-tokens", type=int, default=160)
     ap.add_argument("--timeout-s", type=float, default=30.0)
+    ap.add_argument("--resume", action="store_true",
+                    help="keep finished items in <out>_*.jsonl; run only missing or errored ones")
     a = ap.parse_args()
 
     cfg = load_config(a.config)
     items = read_jsonl(a.items)[: a.limit]
+    done_p, done_t = {}, {}
+    if a.resume and Path(a.out + "_pred.jsonl").exists():
+        done_p = {p["id"]: p for p in read_jsonl(a.out + "_pred.jsonl") if not p.get("error")}
+        done_t = {t["id"]: t for t in read_jsonl(a.out + "_trajectory.jsonl") if t["id"] in done_p}
+        print(f"Resuming: {len(done_p)} items already done")
+    todo = [it for it in items if it["id"] not in done_p]
     system = (ROOT / cfg["prompts"]["calendar"]).read_text().strip()
     if a.backend == "local":
         model = LocalModel(cfg, a.timeout_s, a.max_tokens)
@@ -252,9 +284,16 @@ def main():
         from verify_calendar import make_verifier
         verifier = make_verifier(cfg)
 
-    preds, traj = run(items, model, system, cfg, verifier)
+    new_p, new_t = run(todo, model, system, cfg, verifier)
+    by_p, by_t = {**done_p, **{p["id"]: p for p in new_p}}, {**done_t, **{t["id"]: t for t in new_t}}
+    preds = [by_p[it["id"]] for it in items if it["id"] in by_p]
+    traj = [by_t[it["id"]] for it in items if it["id"] in by_t]
     write_jsonl(a.out + "_pred.jsonl", preds)
     write_jsonl(a.out + "_trajectory.jsonl", traj)
+    unfinished = sum(1 for it in items if it["id"] not in by_p or by_p[it["id"]].get("error"))
+    if unfinished:
+        print(f"\n{unfinished}/{len(items)} items not done (errors or stopped). Re-run with --resume; "
+              f"score_calendar.py refuses to score until they are done.")
 
     n = len(preds)
     print(f"\nSchema-valid: {sum(t['schema_valid'] for t in traj)}/{n}.  "

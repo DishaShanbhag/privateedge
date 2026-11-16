@@ -375,3 +375,60 @@ def test_grammar_forces_schema_valid_output_even_off_task():
 def test_repeated_clarify_fields_are_dropped_not_rejected():
     a, err = parse_action('{"action":"clarify","fields":["date","date","ampm"]}')
     assert err is None and a.fields == ["date", "ampm"]
+
+
+def test_validator_review_mode_flags_resolve_disagreements_without_failing(tmp_path):
+    import subprocess
+    disagree = copy.deepcopy(GOOD)
+    disagree["gold"]["start"] = "2026-11-06T18:00:00-05:00"      # a person may read it differently
+    f = tmp_path / "x.jsonl"
+    f.write_text(json.dumps(disagree) + "\n")
+    script = str(ROOT / "harness/validate_calendar_data.py")
+    run = lambda mode: subprocess.run([sys.executable, script, "--items", str(f), "--mode", mode, "--no-coverage"],
+                                      capture_output=True, text=True)
+    assert run("strict").returncode == 1
+    r = run("review")
+    assert r.returncode == 0 and "NEEDS HUMAN CHECK" in r.stdout
+    broken = copy.deepcopy(GOOD)
+    broken["gold"]["spans"]["date"] = "Saturday"                 # structural: still fails
+    f.write_text(json.dumps(broken) + "\n")
+    assert run("review").returncode == 1
+
+
+# ---------------------------------------------------------------- cloud runner: quota and resume
+
+from run_calendar import GeminiModel, QuotaExhausted, _retry_delay_s, run as run_items  # noqa: E402
+
+
+class _QuotaError(Exception):
+    code, status, message = 429, "RESOURCE_EXHAUSTED", "Quota exceeded: requests per day"
+    details = {"error": {"details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "39834s"}]}}
+
+
+def test_retry_delay_parsed():
+    assert _retry_delay_s(_QuotaError()) == 39834.0
+    assert _retry_delay_s(Exception()) is None
+
+
+def test_daily_quota_stops_run_instead_of_burning_requests():
+    calls = []
+
+    class Fake:
+        name = "fake"
+
+        def __call__(self, system, user):
+            calls.append(1)
+            raise QuotaExhausted("429: quota resets in 11.1 h")
+
+    items = [_item("dinner Friday at 7?"), {**_item("uber 18 bucks"), "id": "t2"}]
+    preds, traj = run_items(items, Fake(), "sys", {"name": "cloud"})
+    assert preds == [] and len(calls) == 1
+
+
+def test_scorer_refuses_runs_with_infrastructure_errors(tmp_path):
+    import subprocess
+    pred = tmp_path / "p.jsonl"
+    pred.write_text(json.dumps({"id": "cal-001", "action": None, "schema_valid": False, "error": "503 UNAVAILABLE"}) + "\n")
+    r = subprocess.run([sys.executable, str(ROOT / "eval/score_calendar.py"), "--gold",
+                        str(ROOT / "data/dev/calendar_dev.jsonl"), "--pred", str(pred)], capture_output=True, text=True)
+    assert r.returncode != 0 and "Refusing to score" in (r.stderr + r.stdout)
