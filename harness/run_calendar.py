@@ -261,6 +261,9 @@ def main():
     ap.add_argument("--limit", type=int)
     ap.add_argument("--max-tokens", type=int, default=160)
     ap.add_argument("--timeout-s", type=float, default=30.0)
+    ap.add_argument("--max-retries", type=int,
+                    help="cloud only: override configs/cloud.yaml max_retries (0 on the free tier, where every "
+                         "failed attempt still counts against the daily quota)")
     ap.add_argument("--resume", action="store_true",
                     help="keep finished items in <out>_*.jsonl; run only missing or errored ones")
     a = ap.parse_args()
@@ -278,6 +281,8 @@ def main():
         model = LocalModel(cfg, a.timeout_s, a.max_tokens)
     else:
         cloud = yaml.safe_load((ROOT / a.cloud_config).read_text())
+        if a.max_retries is not None:
+            cloud["max_retries"] = a.max_retries
         model = GeminiModel(cloud, a.timeout_s, a.max_tokens, structured=bool(cfg.get("constrained_decoding")))
     verifier = None
     if cfg.get("verification"):
