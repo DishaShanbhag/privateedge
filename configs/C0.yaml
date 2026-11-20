@@ -1,3 +1,5 @@
 # v0: prompt only. Record its behaviour before any change.
 inherits: _base.yaml
-prompt: prompts/v0.txt
+prompts:
+  notes: prompts/notes_v0.txt
+  calendar: prompts/calendar_v0.txt   # TODO (Disha): actions/calendar v0 prompt

@@ -2,4 +2,7 @@
 inherits: _base.yaml
 uses_model: false
 calendar: {method: nsdatadetector_plus_rules}
-notes: {method: bm25_top1_snippet}
+notes:
+  method: bm25_top1_snippet   # retrieve BM25 top-3 (same as C0/C1); answer = best sentence of the top note
+  top_k: 3
+  abstain_threshold: 5.018    # top-1 BM25 score below this -> "the notes don't say"; tuned on dev only (harness/b0_notes.py --tune)

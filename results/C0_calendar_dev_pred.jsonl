@@ -1,0 +1,60 @@
+{"id": "cal-001", "action": null, "schema_valid": false}
+{"id": "cal-002", "action": "reminder", "schema_valid": true, "start": "2026-11-05T12:00:00-05:00", "title": "pay rent"}
+{"id": "cal-003", "action": "reminder", "schema_valid": true, "start": "2026-11-02T19:00:00-05:00", "title": "call"}
+{"id": "cal-004", "action": "event", "schema_valid": true, "start": "2027-03-07T09:00:00-05:00", "title": "standup", "duration_min": 60}
+{"id": "cal-005", "action": "event", "schema_valid": true, "start": "2026-11-04T19:00:00-05:00", "title": "dinner", "duration_min": 60}
+{"id": "cal-006", "action": "event", "schema_valid": true, "start": "2026-11-03T10:00:00-05:00", "title": "team sync", "duration_min": 30}
+{"id": "cal-007", "action": "event", "schema_valid": true, "start": "2026-11-20T14:00:00-05:00", "title": "Workshop", "duration_min": 120}
+{"id": "cal-008", "action": "event", "schema_valid": true, "start": "2026-11-04T13:00:00-05:00", "title": "lunch w priya", "duration_min": 60}
+{"id": "cal-009", "action": "event", "schema_valid": true, "start": "2026-11-02T08:30:00-05:00", "title": "breakfast w/ dad", "duration_min": 60}
+{"id": "cal-010", "action": "event", "schema_valid": true, "start": "2026-11-05T12:00:00-05:00", "title": "Call with the landlord", "duration_min": 60}
+{"id": "cal-011", "action": null, "schema_valid": false}
+{"id": "cal-012", "action": "event", "schema_valid": true, "start": "2026-11-03T19:30:00-05:00", "title": "movie nite", "duration_min": 120}
+{"id": "cal-013", "action": "event", "schema_valid": true, "start": "2026-11-05T19:30:00-05:00", "title": "grab dinner", "duration_min": 60}
+{"id": "cal-014", "action": "event", "schema_valid": true, "start": "2026-11-10T15:00:00-05:00", "title": "Project review", "duration_min": 90}
+{"id": "cal-015", "action": "event", "schema_valid": true, "start": "2026-11-18T18:00:00-05:00", "title": "Board call", "duration_min": 60}
+{"id": "cal-016", "action": "event", "schema_valid": true, "start": "2026-11-18T16:00:00-05:00", "title": "1:1 with Maya", "duration_min": 45}
+{"id": "cal-017", "action": "event", "schema_valid": true, "start": "2027-01-07T18:00:00-05:00", "title": "happy hour", "duration_min": 60}
+{"id": "cal-018", "action": null, "schema_valid": false}
+{"id": "cal-019", "action": "event", "schema_valid": true, "start": "2026-11-30T09:15:00-05:00", "title": "standup", "duration_min": 60}
+{"id": "cal-020", "action": "event", "schema_valid": true, "start": "2027-02-26T10:00:00-05:00", "title": "Coffee with Ana the 1st", "duration_min": 60}
+{"id": "cal-021", "action": "clarify", "schema_valid": true, "fields": ["date", "start_time"]}
+{"id": "cal-022", "action": "event", "schema_valid": true, "start": "2027-03-12T08:00:00-05:00", "title": "yoga tomorrow", "duration_min": 60}
+{"id": "cal-023", "action": "reminder", "schema_valid": true, "start": "2026-11-03T08:00:00-05:00", "title": "take out the trash"}
+{"id": "cal-024", "action": "reminder", "schema_valid": true, "start": "2026-11-25T09:00:00-05:00", "title": "book flights home"}
+{"id": "cal-025", "action": "reminder", "schema_valid": true, "start": "2026-11-08T09:00:00-05:00", "title": "renew passport next Monday"}
+{"id": "cal-026", "action": "reminder", "schema_valid": true, "start": "2027-01-01T12:00:00-05:00", "title": "call grandma"}
+{"id": "cal-027", "action": "reminder", "schema_valid": true, "start": "2027-03-13T09:00:00-05:00", "title": "water the plants"}
+{"id": "cal-028", "action": "reminder", "schema_valid": true, "start": "2026-11-02T18:00:00-05:00", "title": "text Jo back tonight"}
+{"id": "cal-029", "action": "reminder", "schema_valid": true, "start": "2026-11-04T19:00:00-05:00", "title": "call the bank"}
+{"id": "cal-030", "action": "clarify", "schema_valid": true, "fields": ["date"]}
+{"id": "cal-031", "action": null, "schema_valid": false}
+{"id": "cal-032", "action": "event", "schema_valid": true, "start": "2026-11-04T10:00:00-05:00", "title": "review", "duration_min": 60}
+{"id": "cal-033", "action": "event", "schema_valid": true, "start": "2027-03-13T02:30:00-05:00", "title": "Pick up Lee from the airport", "duration_min": 60}
+{"id": "cal-034", "action": null, "schema_valid": false}
+{"id": "cal-035", "action": "event", "schema_valid": true, "start": "2026-11-03T15:00:00-05:00", "title": "meeting with Kai", "duration_min": 60}
+{"id": "cal-036", "action": "event", "schema_valid": true, "start": "2026-11-05T18:00:00-05:00", "title": "drinks", "duration_min": 60}
+{"id": "cal-037", "action": "reminder", "schema_valid": true, "start": "2026-11-02T10:00:00-05:00", "title": "call mom"}
+{"id": "cal-038", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
+{"id": "cal-039", "action": "clarify", "schema_valid": true, "fields": ["date"]}
+{"id": "cal-040", "action": "expense", "schema_valid": true, "amount": "2.00", "currency": "USD", "description": "the uber home", "date": "2026-11-02"}
+{"id": "cal-041", "action": "expense", "schema_valid": true, "amount": "42.00", "currency": "USD", "description": "cab", "date": "2026-11-02"}
+{"id": "cal-042", "action": "expense", "schema_valid": true, "amount": "23.50", "currency": "USD", "description": "lunch", "date": "2026-11-01"}
+{"id": "cal-043", "action": "expense", "schema_valid": true, "amount": "18.00", "currency": "USD", "description": "uber", "date": "2026-11-02"}
+{"id": "cal-044", "action": "expense", "schema_valid": true, "amount": "1200.00", "currency": "USD", "description": "rent", "date": "2026-11-02"}
+{"id": "cal-045", "action": "expense", "schema_valid": true, "amount": "42.30", "currency": "EUR", "description": "groceries", "date": "2026-11-05"}
+{"id": "cal-046", "action": "expense", "schema_valid": true, "amount": "4.75", "currency": "USD", "description": "coffee", "date": "2026-11-02"}
+{"id": "cal-047", "action": "expense", "schema_valid": true, "amount": "36.00", "currency": "USD", "description": "my share", "date": "2026-11-01"}
+{"id": "cal-048", "action": "expense", "schema_valid": true, "amount": "29.99", "currency": "USD", "description": "new charger", "date": "2026-11-02"}
+{"id": "cal-049", "action": "expense", "schema_valid": true, "amount": "55.00", "currency": "USD", "description": "Gym membership", "date": "2026-10-28"}
+{"id": "cal-050", "action": "expense", "schema_valid": true, "amount": "80.00", "currency": "USD", "description": "fireworks", "date": "2026-12-31"}
+{"id": "cal-051", "action": "expense", "schema_valid": true, "amount": "12.00", "currency": "USD", "description": "parking", "date": "2026-11-30"}
+{"id": "cal-052", "action": "expense", "schema_valid": true, "amount": "500.00", "currency": "USD", "description": "the auto", "date": "2026-11-01"}
+{"id": "cal-053", "action": "expense", "schema_valid": true, "amount": "150.00", "currency": "USD", "description": "concert tix", "date": "2026-11-02"}
+{"id": "cal-054", "action": "expense", "schema_valid": true, "amount": "24.00", "currency": "USD", "description": "pizza", "date": "2026-11-02"}
+{"id": "cal-055", "action": null, "schema_valid": false}
+{"id": "cal-056", "action": null, "schema_valid": false}
+{"id": "cal-057", "action": null, "schema_valid": false}
+{"id": "cal-058", "action": null, "schema_valid": false}
+{"id": "cal-059", "action": null, "schema_valid": false}
+{"id": "cal-060", "action": null, "schema_valid": false}
