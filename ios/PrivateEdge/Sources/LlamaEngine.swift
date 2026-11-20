@@ -39,15 +39,11 @@ final class LlamaEngine {
     let nBatch: Int32 = 512
     let loadMs: Double
 
-    init(path: String, mmap: Bool) throws {
+    init(path: String, mmap: Bool, gpu: Bool = true) throws {
         let t0 = CFAbsoluteTimeGetCurrent()
         llama_backend_init()
         var mp = llama_model_default_params()
-        #if targetEnvironment(simulator)
-        mp.n_gpu_layers = 0  // the Simulator has no usable Metal for llama.cpp
-        #else
-        mp.n_gpu_layers = -1
-        #endif
+        mp.n_gpu_layers = gpu ? -1 : 0  // -1: every layer on the GPU (Metal)
         mp.load_mode = mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE
         guard let m = llama_model_load_from_file(path, mp) else { throw EngineError.load(path) }
         var cp = llama_context_default_params()

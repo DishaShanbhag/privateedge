@@ -13,9 +13,9 @@ actor ModelService {
     private var engine: LlamaEngine?
     private let sampler = MemorySampler()
 
-    func load(path: String, mmap: Bool) throws -> Double {
+    func load(path: String, mmap: Bool, gpu: Bool) throws -> Double {
         engine = nil  // free the old one first: two copies of the weights do not fit
-        let e = try LlamaEngine(path: path, mmap: mmap)
+        let e = try LlamaEngine(path: path, mmap: mmap, gpu: gpu)
         engine = e
         return e.loadMs
     }
@@ -35,7 +35,14 @@ enum LoadState: Equatable {
 final class AppModel: ObservableObject {
     @Published var state: LoadState = .idle
     @Published var shaState = "not checked"
-    @Published var useMmap = false  // the protocol measures memory with mmap off
+    @Published var useMmap = ProcessInfo.processInfo.arguments.contains("-mmap")  // protocol: mmap off
+    /// Metal on a device. In the Simulator, CPU: the Simulator's Metal crashes loading the weights
+    /// with mmap off and produces garbage with mmap on (tested 2026-11-19), so it stays off there.
+    #if targetEnvironment(simulator)
+    @Published var useGPU = ProcessInfo.processInfo.arguments.contains("-simGPU")
+    #else
+    @Published var useGPU = true
+    #endif
     let service = ModelService()
 
     /// The model ships inside the app (copied from models/ at build time) or can be dropped into
@@ -56,13 +63,30 @@ final class AppModel: ObservableObject {
         guard let path = modelPath else { state = .missing; return }
         if case .loading = state { return }
         state = .loading
-        let mmap = useMmap
+        let mmap = useMmap, gpu = useGPU
         Task {
             do {
-                let ms = try await service.load(path: path, mmap: mmap)
+                let ms = try await service.load(path: path, mmap: mmap, gpu: gpu)
                 state = .ready(ms)
+                await autorun()
             } catch {
                 state = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Test hook: launch with `-autorun "message"` to run it through C3 once the model loads and
+    /// print the result to the console (used to check the app without tapping).
+    private func autorun() async {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-autorun"), i + 1 < args.count else { return }
+        let configs = args.contains("-allConfigs") ? [LadderConfig.C0, .C1, .C3] : [.C3]
+        for cfg in configs {
+            do {
+                let r = try await service.run(nowItem(args[i + 1]), cfg, today: llamaToday())
+                NSLog("%@", "AUTORUN \(cfg.rawValue) gpu=\(useGPU) first=\(r.info.firstTokenMs ?? -1)ms total=\(r.info.totalMs)ms out=\(r.info.outputTokens) decision=\(r.decision) raw=\(r.raw)")
+            } catch {
+                NSLog("%@", "AUTORUN error \(error)")
             }
         }
     }

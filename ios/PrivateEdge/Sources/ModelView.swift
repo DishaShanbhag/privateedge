@@ -12,10 +12,11 @@ struct ModelView: View {
                     row("Size", app.modelSizeGB)
                     row("Runtime", LLAMA_CPP)
                     #if targetEnvironment(simulator)
-                    row("Compute", "CPU (Simulator: speed and memory are not phone numbers)")
+                    row("Compute", app.useGPU ? "Mac GPU via the Simulator (not phone numbers)" : "Mac CPU (slow; not phone numbers)")
                     #else
-                    row("Compute", "Metal GPU, all layers")
+                    row("Compute", app.useGPU ? "Metal GPU, all layers" : "CPU only")
                     #endif
+                    Toggle("Use the GPU (Metal)", isOn: $app.useGPU)
                     ModelStatusLine()
                     Toggle("Memory-map the weights (mmap)", isOn: $app.useMmap)
                     Button("Load / reload model") { app.load() }
