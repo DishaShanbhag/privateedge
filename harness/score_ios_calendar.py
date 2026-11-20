@@ -5,9 +5,9 @@ config with verification (C3), runs harness/verify_calendar.py on it, exactly as
 does. The repair ablation is not supported (it needs a second generation on the phone).
 
 Usage:
-  python harness/score_ios_calendar.py --device-run DIR --config configs/C3.yaml --out results/ios_C3_calendar_dev
-  python eval/score_calendar.py --gold data/dev/calendar_dev.jsonl --pred results/ios_C3_calendar_dev_pred.jsonl \
-      --trajectory results/ios_C3_calendar_dev_trajectory.jsonl
+  python harness/score_ios_calendar.py --device-run DIR --config configs/C3.yaml --out local_results/ios_C3_calendar_dev
+  python eval/score_calendar.py --gold data/dev/calendar_dev.jsonl --pred local_results/ios_C3_calendar_dev_pred.jsonl \
+      --trajectory local_results/ios_C3_calendar_dev_trajectory.jsonl
 """
 import argparse
 from pathlib import Path
