@@ -8,18 +8,18 @@
 {"id": "cal-008", "action": "clarify", "schema_valid": true, "fields": ["date"]}
 {"id": "cal-009", "action": "clarify", "schema_valid": true, "fields": ["date"]}
 {"id": "cal-010", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
-{"id": "cal-011", "action": "none", "schema_valid": true}
+{"id": "cal-011", "action": "event", "schema_valid": true, "start": "2026-11-02T20:00:00-05:00", "title": "drinks w sam", "duration_min": 60}
 {"id": "cal-012", "action": "clarify", "schema_valid": true, "fields": ["date"]}
 {"id": "cal-013", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
 {"id": "cal-014", "action": "event", "schema_valid": true, "start": "2026-11-10T15:00:00-05:00", "title": "Project review", "duration_min": 90}
 {"id": "cal-015", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
 {"id": "cal-016", "action": "event", "schema_valid": true, "start": "2026-11-18T16:00:00-05:00", "title": "1:1 with Maya", "duration_min": 45}
 {"id": "cal-017", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
-{"id": "cal-018", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
+{"id": "cal-018", "action": "none", "schema_valid": true}
 {"id": "cal-019", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
 {"id": "cal-020", "action": "clarify", "schema_valid": true, "fields": ["date"]}
 {"id": "cal-021", "action": "clarify", "schema_valid": true, "fields": ["date", "start_time"]}
-{"id": "cal-022", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
+{"id": "cal-022", "action": "event", "schema_valid": true, "start": "2027-03-13T08:00:00-05:00", "title": "yoga tomorrow", "duration_min": 60}
 {"id": "cal-023", "action": "reminder", "schema_valid": true, "start": "2026-11-03T08:00:00-05:00", "title": "take out the trash"}
 {"id": "cal-024", "action": "reminder", "schema_valid": true, "start": "2026-11-25T09:00:00-05:00", "title": "book flights home"}
 {"id": "cal-025", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}

@@ -138,9 +138,8 @@ Checks (2026-11-19):
 - In the Simulator the model runs on the Mac's CPU (its Metal crashes or gives garbage), so one
   message takes about 2.5 minutes there. Simulator timings are not phone numbers.
 
-The calendar app still stamps "Today Date" with the date of the committed Mac runs (16 Nov 2026) or the
-device date, not the item's reference date. It switches to the reference date together with
-`run_calendar.py` (see `harness/chat_prompt.py`).
+The calendar prompt uses each item's reference date as the template's "Today Date", like the Mac
+runner (`harness/chat_prompt.py`); `engine-check C3` matches the Mac run on 60/60 items.
 
 ## Not done yet
 

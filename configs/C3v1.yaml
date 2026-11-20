@@ -1,0 +1,8 @@
+# C3 notes v1, as proposed: entities must occur in the cited QUOTES. Kept for comparison (CHANGELOG).
+inherits: C3.yaml
+verifier:
+  calendar_crosscheck: nsdatadetector
+  span_policy: drop_and_merge
+  recovery: clarify
+  notes_grounding: quote
+  notes_retrieval_threshold: 0.0

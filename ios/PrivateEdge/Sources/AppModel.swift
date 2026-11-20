@@ -112,7 +112,7 @@ final class AppModel: ObservableObject {
         let configs = args.contains("-allConfigs") ? [LadderConfig.C0, .C1, .C3] : [.C3]
         for cfg in configs {
             do {
-                let r = try await service.run(nowItem(args[i + 1]), cfg, today: llamaToday())
+                let it = nowItem(args[i + 1]); let r = try await service.run(it, cfg, today: templateDate(it))
                 NSLog("%@", "AUTORUN \(cfg.rawValue) gpu=\(useGPU) first=\(r.info.firstTokenMs ?? -1)ms total=\(r.info.totalMs)ms out=\(r.info.outputTokens) decision=\(r.decision) raw=\(r.raw)")
             } catch {
                 NSLog("%@", "AUTORUN error \(error)")

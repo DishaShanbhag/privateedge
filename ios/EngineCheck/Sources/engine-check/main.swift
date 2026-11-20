@@ -1,7 +1,7 @@
 import CalendarCore
 import Foundation
 
-// engine-check <C0|C1|C3> [--today "16 Nov 2026"] [--limit N]
+// engine-check <C0|C1|C3> [--limit N]   (Today Date = each item's reference date, as the Mac runner)
 // Compares raw outputs (and, for C3, final decisions) with results/<config>_calendar_dev_trajectory.jsonl.
 
 let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../..").standardized
@@ -9,8 +9,7 @@ func read(_ p: String) -> String { (try? String(contentsOf: repo.appendingPathCo
 
 var args = Array(CommandLine.arguments.dropFirst())
 let config = args.first ?? "C1"
-var today = "16 Nov 2026", limit = Int.max
-if let i = args.firstIndex(of: "--today") { today = args[i + 1] }
+var limit = Int.max
 if let i = args.firstIndex(of: "--limit") { limit = Int(args[i + 1])! }
 
 let system = read("prompts/calendar_v0.txt")
@@ -28,12 +27,12 @@ for line in read("results/\(config)_calendar_dev_trajectory.jsonl").split(separa
 
 var engineRef: LlamaEngine? = try LlamaEngine(path: repo.appendingPathComponent("models/Llama-3.2-3B-Instruct-Q4_K_M.gguf").path, mmap: true)
 
-print(String(format: "loaded in %.1f s; config %@, Today Date %@", engineRef!.loadMs / 1000, config, today))
+print(String(format: "loaded in %.1f s; config %@", engineRef!.loadMs / 1000, config))
 
 var sameRaw = 0, sameDecision = 0, sameTokens = 0, n = 0
 var diffs: [String] = []
 for item in items.prefix(limit) {
-    let prompt = chatPrompt(system: system, user: userMessage(item), today: today)
+    let prompt = chatPrompt(system: system, user: userMessage(item), today: templateDate(item))
     let (raw, info) = try engineRef!.generate(prompt: prompt, grammar: grammar, maxTokens: 160, timeoutS: 60)
     var (action, _) = parseAction(raw)
     if config == "C3", let a = action { action = verify(item, a).0 }

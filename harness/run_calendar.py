@@ -23,10 +23,16 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from calendar_schema import Clarify, action_json_schema, parse_action, to_pred
+from chat_prompt import render_llama32, tokenize_prompt
 from config import load_config
 from io_utils import read_jsonl, write_jsonl
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def local_now(item):
+    """The item's reference time in its own zone (the date the model is told it is)."""
+    return datetime.fromisoformat(item["reference_time"]).astimezone(ZoneInfo(item["tz"]))
 
 
 def user_message(item):
@@ -65,34 +71,34 @@ class LocalModel:
         self.timeout_s, self.max_tokens = timeout_s, max_tokens
         self.name = f"{m['name']}-{m['quant']}"
 
-    def __call__(self, system, user):
+    def __call__(self, system, user, ref):
+        """`ref`: the item's local reference time. The prompt is rendered by chat_prompt.render_llama32
+        with the template's "Today Date" set to it (the GGUF template would stamp the machine's date)."""
         t0 = time.perf_counter()
-        t_first, pieces, timed_out, n_out, finish = None, [], False, 0, None
-        stream = self.llm.create_chat_completion(
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            temperature=self.temperature, max_tokens=self.max_tokens, grammar=self.grammar, stream=True)
+        t_first, pieces, timed_out, finish = None, [], False, None
+        prompt_tokens = tokenize_prompt(self.llm, render_llama32(system, user, ref))
+        stream = self.llm.create_completion(prompt=prompt_tokens, temperature=self.temperature,
+                                            max_tokens=self.max_tokens, grammar=self.grammar, stream=True)
         for chunk in stream:
             choice = chunk["choices"][0]
             if choice["finish_reason"] is not None:
                 finish = choice["finish_reason"]
-            elif "content" in choice["delta"]:
-                n_out += 1  # one streamed chunk per generated token
-                if choice["delta"]["content"]:
-                    t_first = t_first or time.perf_counter()
-                    pieces.append(choice["delta"]["content"])
+            if choice["text"]:
+                t_first = t_first or time.perf_counter()
+                pieces.append(choice["text"])
             if time.perf_counter() - t0 > self.timeout_s:
                 timed_out = True
                 break
         t_end = time.perf_counter()
         text = "".join(pieces)
-        # Context holds prompt + generated tokens, except the last token sampled at the length cap,
-        # which is never evaluated. Checked against llama.cpp's own usage.prompt_tokens.
-        n_in = self.llm.n_tokens - n_out + (1 if finish == "length" else 0)
+        # Generated tokens = re-tokenized text (as run_notes.py). Counting streamed chunks undercounts
+        # when a multi-byte character spans two tokens ("₹" in cal-052).
+        n_out = len(self.llm.tokenize(text.encode(), add_bos=False, special=False)) if text else 0
         decode_s = (t_end - t_first) if t_first else 0.0
         return text, {
             "first_token_ms": round((t_first - t0) * 1000, 1) if t_first else None,
             "total_ms": round((t_end - t0) * 1000, 1),
-            "input_tokens": n_in, "output_tokens": n_out,
+            "input_tokens": len(prompt_tokens), "output_tokens": n_out,
             "decode_tok_s": round((n_out - 1) / decode_s, 1) if decode_s > 0 and n_out > 1 else None,
             "timed_out": timed_out, "hit_max_tokens": finish == "length", "finish_reason": finish,
             "model_version": self.name, "cost_usd": 0.0,
@@ -148,7 +154,8 @@ class GeminiModel:
             return None
         return round(n_in / 1e6 * price["input"] + n_out / 1e6 * price["output"], 8)
 
-    def __call__(self, system, user):
+    def __call__(self, system, user, ref=None):
+        # ref is unused: Gemini has no chat template that stamps a date.
         from google.genai import errors
         attempts, last_err = 0, None
         while attempts <= self.retries:
@@ -211,7 +218,7 @@ def run(items, model, system, cfg, verifier=None):
     preds, traj = [], []
     for i, it in enumerate(items, 1):
         try:
-            raw, info = model(system, user_message(it))
+            raw, info = model(system, user_message(it), local_now(it))
         except QuotaExhausted as e:
             print(f"\nSTOPPED at {it['id']} ({i - 1}/{len(items)} done): {e}")
             break
@@ -224,7 +231,7 @@ def run(items, model, system, cfg, verifier=None):
                 # ONE capped retry: the failure goes back as feedback; a second failure -> clarify.
                 why = "; ".join(f"{k}: {v}" for k, v in verdict["details"].items())
                 raw2, info2 = model(system, user_message(it) + "\n\nPrevious answer: " + raw + "\n\n"
-                                    + REPAIR_NOTE.format(why=why))
+                                    + REPAIR_NOTE.format(why=why), local_now(it))
                 action2, err2 = parse_action(raw2)
                 if action2 is None:
                     action2 = Clarify(action="clarify", fields=[verdict["clarify_field"]])
@@ -310,8 +317,13 @@ def main():
         print(f"{where} {latency_summary(traj, key)}")
     costs = [t.get("cost_usd") for t in traj]
     if a.backend == "gemini":
-        print("Cost: " + (f"${sum(costs):.4f} total" if all(c is not None for c in costs)
-                          else "not computed (set price_usd_per_mtok in configs/cloud.yaml)"))
+        known = [c for c in costs if c is not None]
+        failed = sum(bool(t.get("error")) for t in traj)
+        if not (cloud.get("price_usd_per_mtok") or {}).get("input"):
+            print("Cost: not computed (set price_usd_per_mtok in configs/cloud.yaml)")
+        else:
+            print(f"Cost: ${sum(known):.4f} for {len(known)} answered requests"
+                  + (f" ({failed} failed requests not billed)" if failed else ""))
         print("Model versions returned:", sorted({str(t.get("model_version")) for t in traj}))
     print(f"Wrote {a.out}_pred.jsonl and {a.out}_trajectory.jsonl; score with eval/score_calendar.py")
 

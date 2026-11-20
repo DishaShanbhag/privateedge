@@ -2,4 +2,4 @@
 inherits: _base.yaml
 prompts:
   notes: prompts/notes_v0.txt
-  calendar: prompts/calendar_v0.txt   # TODO (Disha): actions/calendar v0 prompt
+  calendar: prompts/calendar_v0.txt

@@ -1,15 +1,22 @@
 import Foundation
 
-/// The Llama 3.2 chat template from the GGUF file, as llama-cpp-python renders it for the Mac
-/// harness (system + user, no tools, generation prompt on). The template stamps "Today Date" with
-/// the run machine's current date (strftime_now "%d %b %Y"), so pass the same string to match a
-/// Mac run, or `llamaToday()` to behave as the Mac harness would today.
+/// The Llama 3.2 chat template from the GGUF file (system + user, no tools, generation prompt on),
+/// as harness/chat_prompt.py render_llama32 renders it: "Today Date" is the item's reference date
+/// (`templateDate(item)`), not the machine's date the built-in template would stamp (CHANGELOG
+/// 2026-11-19).
 public func chatPrompt(system: String, user: String, today: String) -> String {
     "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
         + "Cutting Knowledge Date: December 2023\nToday Date: \(today)\n\n"
         + system.pyStrip() + "<|eot_id|>"
         + "<|start_header_id|>user<|end_header_id|>\n\n" + user.pyStrip() + "<|eot_id|>"
         + "<|start_header_id|>assistant<|end_header_id|>\n\n"
+}
+
+/// The template's date for an item: its reference date in its own zone, as "%d %b %Y".
+public func templateDate(_ item: Item) -> String {
+    let d = localRef(item.referenceTime, item.tz).day
+    let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    return String(format: "%02d %@ %04d", d.d, months[d.m - 1], d.y)
 }
 
 /// strftime("%d %b %Y") in the device's time zone, e.g. "19 Nov 2026".

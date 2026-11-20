@@ -75,7 +75,7 @@ struct CalendarView: View {
         let cfg = config
         Task {
             do {
-                let r = try await app.service.run(item, cfg, today: llamaToday()) { text in
+                let r = try await app.service.run(item, cfg, today: templateDate(item)) { text in
                     Task { @MainActor in streaming = text }
                 }
                 result = r
