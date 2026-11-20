@@ -1,0 +1,1 @@
+{"llama_cpp":"b12387","min_available_mb":3240.2929000854492,"model_load_s":1.7859710454940796,"model_sha256":"6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff","peak_footprint_mb":2903.7070999145508,"requests":10,"run":"C2_notes","thermal_events":["{\"t_s\":38.662585973739624,\"thermal_state\":\"fair\"}"],"wall_s":49.851156949996948}

@@ -61,7 +61,7 @@ Checked on the Mac with `pe-replay` against the Python harness (2026-11-19), on 
 | C2 notes (hybrid, embeddings) | 60/60 | 60/60 | 60/60 |
 | C1 calendar | 60/60 | n/a | 60/60 |
 
-Peak memory footprint on the Mac was 3.19–3.25 GB, above the 3.0 GB target. Mac and iPhone account for memory differently, so this is a warning to check at the feasibility gate, not a phone result.
+Peak memory footprint on the Mac was 3.3–3.4 GB (3,187–3,249 MiB). On the iPhone 16 Pro (feasibility gate, 2026-11-19) it was 3.0–3.04 GB, with 3.4 GB still available to the app; see `results/ios_gate_iphone16pro_2026-11-19/`. The app logs memory in MiB; the proposal's 3.0 GB target is in decimal GB.
 
 ## Setup
 

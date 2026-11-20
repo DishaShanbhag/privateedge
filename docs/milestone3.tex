@@ -1,0 +1,147 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+\renewcommand{\ttdefault}{pcr}
+\usepackage[letterpaper,margin=0.6in,top=0.5in,bottom=0.6in]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+
+\pagestyle{plain}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\titleformat{\section}{\normalfont\fontsize{11}{13}\selectfont\bfseries}{\thesection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{6pt}{2pt}
+\setlist[itemize]{leftmargin=1.2em,itemsep=1pt,topsep=1pt,parsep=0pt}
+\setlist[enumerate]{leftmargin=1.4em,itemsep=1pt,topsep=1pt,parsep=0pt}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\renewcommand{\arraystretch}{1.05}
+\hypersetup{pdftitle={PrivateEdge: Results, Failures and Iteration},
+            pdfauthor={Ananya Singh, Disha Shanbhag, Yash Jain}}
+
+\begin{document}
+
+\begin{center}
+{\fontsize{15}{18}\selectfont\bfseries PrivateEdge: Results, Failures and Iteration}\\[4pt]
+Ananya Singh \quad Disha Shanbhag \quad Yash Jain\\[1pt]
+Generative AI Engineering, New York University \quad Milestone 3\\[1pt]
+Code and results: \href{https://github.com/DishaShanbhag/privateedge}{\texttt{github.com/DishaShanbhag/privateedge}}\\[1pt]
+\textit{Question:} how much quality does a phone-sized model lose against the cloud, and can system design win it back?
+\end{center}
+\vspace{-4pt}
+
+\section{Current system}
+Our question is whether personal-assistant tasks can stay on the phone without an unacceptable loss of quality. We study two tasks. In response to the Milestone 2 feedback, the first is now broader: \textbf{message $\rightarrow$ structured action} turns a message into an event, a reminder or an expense (``I paid \$40 for dinner''), returns \texttt{none} when nothing needs doing, or asks a clarifying question when the date, time or amount is missing or ambiguous. The second, \textbf{notes question answering}, answers from the user's own notes, citing the note and a verbatim quote, or says ``the notes don't say''. Both tasks share a single set of written conventions for dates, defaults and scoring, which the system and the graders follow alike.
+
+The local model is Llama~3.2~3B Instruct (Q4\_K\_M, 1.88\,GiB, SHA-256 pinned), run by llama.cpp at temperature~0. Each configuration adds one component, so we can measure what each one is worth. \textbf{B0} is a non-generative baseline (Apple's NSDataDetector plus our own date rules for actions, keyword search for notes). \textbf{C0} is the prompt alone. \textbf{C1} adds grammar-constrained decoding, so the output always parses. \textbf{C2} adds hybrid retrieval for notes: SQLite FTS5 keyword search fused with a 37\,MB embedding model (bge-small) by reciprocal rank fusion. \textbf{C3} adds a verifier that rechecks the model's answer in code and, when a check fails, asks a question (actions) or abstains (notes).
+
+We tune on a Mac and measure on the phone. This is valid only if the phone produces exactly what the Mac produces, so we made both sides identical and tested that they are. Both use the same model file and the same llama.cpp commit (b12387). Both run greedy decoding with the same settings, and both build the prompt in our own code rather than through the chat template (see the date fix in Section~4). We ported the pipeline to Swift and ran that Swift code on the Mac against the Python harness. On all 60 dev items of every configuration, it reproduced the same prompt, the same retrieved notes and the same raw output, character for character. The calendar resolver and verifier were also ported to Swift, so C3 runs on the phone; the port agrees with the Python on all 16,651 test rows, and the app's engine reaches the same final decision as the Mac on all 60 action items. A single iPhone app now holds every task and every measurement run. We ran it on the iPhone~16~Pro, and on all 20 feasibility-gate items it produced exactly the Mac's output (Section~2).
+
+\section{Baseline and current results}
+Each task has a 60-item dev pilot. The action pilot has 20 events, 8 reminders, 13 expenses, 6 \texttt{none} items and 13 clarify items; the notes pilot has 60 questions over 49 notes, 12 of them unanswerable. Both pilots were drafted with Claude, a different model family from the cloud baseline, as the proposal requires, and are being reviewed by the team. All numbers below are on dev only; the test set has not been used.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}l c c c c L@{}}
+\toprule
+\textbf{Actions} & \textbf{All actions} & \textbf{Events + reminders} & \textbf{Valid output} & \textbf{Silent errors} & \textbf{Note} \\
+\midrule
+B0 & 100\%$^*$ & 100\%$^*$ & 60/60 & 0/60 & $^*$circular on dev (see Section~3) \\
+C0 prompt only & 38.3\% & 33.3\% & 50/60 & 25/60 & \\
+C1 + grammar & 50.0\% & 35.9\% & 60/60 & 25/60 & gain is almost all on \texttt{none} items \\
+C3 + verifier & \textbf{58.3\%} & \textbf{43.6\%} & 60/60 & \textbf{1/60} & verifier precision 0.92, recall 0.96 \\
+\bottomrule
+\end{tabularx}
+
+\vspace{4pt}
+\begin{tabularx}{\textwidth}{@{}l c c c c c L@{}}
+\toprule
+\textbf{Notes} & \textbf{Correct (proxy)} & \textbf{Right note in top 3} & \textbf{(paraphrased)} & \textbf{Valid output} & \textbf{Abstains correctly} & \textbf{Abstains wrongly} \\
+\midrule
+B0 keyword search & 50.0\% & 0.90 & 0.50 & 60/60 & 10/12 & 12/48 \\
+C0 prompt only & 48.3\% & 0.90 & 0.50 & 37/60 & 0/12 & 3/48 \\
+C1 + grammar & 61.7\% & 0.90 & 0.50 & 60/60 & 11/12 & 8/48 \\
+C2 + hybrid retrieval & \textbf{65.0\%} & \textbf{1.00} & \textbf{1.00} & 60/60 & \textbf{12/12} & 7/48 \\
+C3 + verifier & 63.3\% & 1.00 & 1.00 & 60/60 & 12/12 & 10/48 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+A \emph{silent error} is a wrong action that reaches the user with no question asked. It is the failure that matters most for an assistant that writes to someone's calendar. For notes, \emph{correct (proxy)} means the answer contains every annotated key fact, or abstains on an unanswerable question. It is an automatic stand-in for the 0--2 rubric, whose blind human grading has not started yet.
+
+\textbf{First phone results.} We ran the feasibility gate on the iPhone~16~Pro: 10 notes items with C2 (index loaded) and 10 action items with C1 generation, Release build, weights read into memory (no mmap), all layers on the GPU. The phone reproduced the Mac's prompts, retrieved notes and raw outputs on all 20 items, so the dev accuracy above is also the phone's accuracy. C3 verification takes under a millisecond on the Mac, so C1's time is effectively the verified action's time. This run was a check, not a protocol run: the phone was plugged in and charging at about 50\% battery.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}l c c c c L@{}}
+\toprule
+\textbf{iPhone 16 Pro} & \textbf{First token (median)} & \textbf{Full answer (median / max)} & \textbf{Decoding} & \textbf{Peak memory} & \textbf{Thermal state} \\
+\midrule
+Notes, C2 & 1.38\,s & 5.3 / 6.1\,s & 13.7 tok/s & 3.04\,GB & nominal $\rightarrow$ fair after 39\,s \\
+Actions, C1 & 4.81\,s & 7.7 / 10.1\,s & 13.7 tok/s & 3.01\,GB & fair $\rightarrow$ serious after 64\,s \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{The cloud baseline has no results yet.} The runner for Gemini~3.8~Flash is written. Our first run on the dev pilot stopped at the free tier's limit of 20 requests per day, and no partial results were scored. Turning on billing removes the limit; at the current price the 60-item dev run costs under \$0.10. Until then the central quantity of the project, the cloud-minus-local gap, is unmeasured.
+
+\section{What worked and what failed}
+\textbf{Format errors explain most of the raw notes failures, but few of the action failures.} In notes C0, 23 of 60 outputs were invalid JSON, and 19 of those were the model trying to say ``the notes don't say'' without quotation marks. It attempted the right abstention on 11 of the 12 unanswerable questions, but the format broke it. The grammar fixed every one. In actions, the grammar also made every output valid, but 10 of its 11.7 points came from the six \texttt{none} items. The real errors were unchanged: 25 silent errors remained.
+
+\textbf{The verifier removes almost all silent errors, at the cost of extra questions.} It re-derives each date, time and amount from the words the model cites, under the conventions, and catches 24 of the 25 wrong actions. Silent errors fall from 25 to 1. But the questions come from the model's own mistakes: 20 of the 25 items C3 gets wrong are messages that were clear, where the model's value was wrong and the verifier rightly asked instead. The underlying weakness is date arithmetic. In C1 the model got the date right on only 53.7\% of items, gave 14 wrong times, got 4 of the 5 daylight-saving items wrong, and acted on 8 of the 13 messages that should have triggered a question.
+
+\textbf{Better retrieval closed the notes retrieval gap, but our dev set is too small to rank models.} Keyword search found the right note for only half of the paraphrased questions (``doctor's appointment'' against a note reading ``Dr.\ Patel, Tue 3pm''); hybrid retrieval found all of them. When the right note was missing, the model mostly abstained rather than guessing, which is the behaviour we want. With only 49 notes, though, all three embedding models we compared scored 0.98--1.00, so the dev set cannot tell them apart.
+
+\textbf{Remaining notes failures are the model's, not retrieval's.} With every needed note retrieved, C2 still abstains wrongly on 7 answerable questions: on conflicting notes it gives up instead of reporting both, and it sometimes fails to connect a paraphrase to a note it was shown. It also makes the error a verifier is designed for: it quoted ``Bike lock combo 0629'' and answered ``62''.
+
+\textbf{The notes verifier is a negative result.} It catches the bike-lock error, but only 2 of the 14 wrong answers it sees, and it costs accuracy (65.0\% to 63.3\%). The reason is the kind of error that remains: C2's wrong answers are mostly incomplete or wrongly abstained, and a checker that can only turn an answer into ``the notes don't say'' cannot fix either. Numbers, dates and names copied faithfully from the right note pass every check even when the answer leaves something out.
+
+\textbf{B0's perfect action score is not a valid estimate.} The same person wrote B0's rules, the dev items and the validator, and the validator accepts only labels the rules reproduce. B0 is frozen, and its honest number will come from items written by someone who has not seen the rules.
+
+\textbf{On the phone, the model fits but is too slow for actions, and heat makes it slower.} Peak memory was 3.0--3.04\,GB, right at our 3.0\,GB target, with 3.4\,GB still available to the app. That is well below what the Mac suggested (3.3--3.4\,GB). Notes meets its latency targets at the median, but actions miss badly: the first token takes 4.8\,s against a 1\,s target. Most of that time goes to reading a 703-token prompt, and 659 of those tokens (the instructions and template header) are identical for every request made on the same day. Heat shows up within the run itself. Action prompts took 3.3--3.5\,s to the first token while the phone was in the \emph{fair} state, and 4.5--5.3\,s once it reached \emph{serious}; notes rose from 1.2\,s to 1.6\,s as the phone warmed. Decoding is also slow, at 13.7 tokens/s, partly because constrained decoding halves decoding speed (on the Mac, notes drops from 104 to 50 tokens/s).
+
+\section{Iterations and improvements}
+Every change below was made on dev data, for a measured reason, and logged with its effect in the project changelog.
+\begin{itemize}
+  \item \textbf{Verifier v1 $\rightarrow$ v2.} v1 flagged 9 correct answers, 8 of them because the model mislabelled its source words. One example: when a message had no date, it cited today's date from the prompt. v2 ignores source spans that are not in the message and reads the date and time together, but still requires an exact match. Precision rose from 0.74 to 0.93 with recall unchanged, and accuracy went from 38.3\% to 55.0\% (before the date fix below).
+  \item \textbf{Recovery by one repair retry (ablation).} On a verifier failure, the model gets one retry, with the failed check as feedback. Accuracy rose from 58.3\% to 65.0\%, at the cost of a second generation whenever a check fails. The number is optimistic, because the feedback contains the verifier's computed value.
+  \item \textbf{A date bug in the prompt.} The model's chat template silently writes the machine's current date (``Today Date'') into every prompt, which contradicts each item's fixed reference time. We now render the prompt ourselves with the item's date. The new prompt is identical to the official template on all 120 items except for that date. On actions, accuracy rose from 35.0\% to 38.3\% for C0, from 46.7\% to 50.0\% for C1 and from 55.0\% to 58.3\% for C3. Both runners and the app now use it, and all results above include it.
+  \item \textbf{Conventions made precise before labelling.} The original rule that ``meal words mean PM'' would have put breakfast at 8 in the evening, so we added explicit cues for breakfast, lunch and dinner. The data validator, which recomputes every label from the conventions, also found a resolver bug: a span of just ``sat'' was not read as Saturday.
+  \item \textbf{Notes verifier v1 $\rightarrow$ v2.} As proposed, v1 required every number and name in the answer to appear in the cited \emph{quote}. Two of its three false alarms were right answers whose quote was too short to hold the value (citing ``Wifi'' for the wifi password). v2 checks against the whole cited note, and still requires the quote to be verbatim. Every retrieval threshold above zero only added false abstentions, so the threshold is 0.
+  \item \textbf{A credible notes baseline.} A keyword baseline that never abstains scores 0 on every unanswerable item. We gave B0 an abstention threshold, tuned on dev, so it abstains correctly on 10 of the 12 unanswerable items. The price is wrong abstentions on 12 answerable ones: keyword scores cannot tell a related note from an answering one.
+\end{itemize}
+
+\section{Remaining gaps against our success criteria}
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}l l L@{}}
+\toprule
+\textbf{Criterion (Milestone 2)} & \textbf{Target} & \textbf{Status} \\
+\midrule
+Gap to cloud & $\le$ 5 points, paired-bootstrap CI & Not measured: no cloud results yet \\
+Action latency & first token $<$ 1\,s, verified action $<$ 3\,s & \textbf{Missed}: 4.8\,s first token, 7.7\,s full answer (median, phone) \\
+Notes latency & first token $<$ 1.5\,s, answer $<$ 6\,s & Met at the median (1.38\,s, 5.3\,s); worst case 1.62\,s and 6.1\,s \\
+Peak memory & $\le$ 3.0\,GB & At the limit: 3.04\,GB on the phone, with 3.4\,GB still available \\
+Sustained use, battery & minute-10 speed $\ge$ 60\% of minute 1 & Not yet run. The gate reached \emph{serious} within 64\,s while charging \\
+Privacy & zero network calls & By design (no network code in the app); packet capture not yet done \\
+Notes answer quality & 0--2 rubric, $\kappa \ge 0.7$ & Not graded yet; proxy 65.0\% (C2). The verifier does not help \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{How we now measure heat (response to feedback).} iOS gives apps no temperature, only a thermal state (nominal, fair, serious, critical). The app logs it before and after every request and whenever it changes. Heat matters because it slows the phone down and drains the battery, so we measure it through those effects: decoding speed at minute 1 against minute 10 in a 30-request sustained run and a 10-minute stress run, plus battery used per request. Optionally, we will take infrared-thermometer readings of the phone's back at fixed points in the run. The gate already shows why this matters. Within about a minute of use the phone went from \emph{nominal} to \emph{serious}, and the time to read an action prompt rose by about half. Since the phone was charging during the gate, the protocol runs (unplugged, 80--90\% battery, after a reboot) will tell us how much of this is the model alone.
+
+\section{Next steps, in priority order}
+\begin{enumerate}
+  \item \textbf{Run the cloud baseline} on both dev pilots, by enabling billing and adding a Gemini option to the notes runner (with the same C2 chunks), and score it with the same gold labels. We will also run our verifier on the cloud's answers, to see whether it catches cloud mistakes too. Without this step the project cannot answer its question.
+  \item \textbf{Cut action latency on the phone, then run the protocol.} 659 of the 703 prompt tokens are identical for every request made on the same day. Keeping their processed state between requests (prefix caching, which the Mac harness already does) means the phone reads only the new message, which attacks the 4.8\,s first token directly. A 2K context instead of 4K brings memory under the target: our longest prompt plus answer is under 900 tokens, and the change frees about 0.23\,GB. We will re-run the gate, then the sustained and stress runs under the protocol, which give the heat and battery numbers, and repeat them on the iPhone~17~Pro~Max as the stretch device.
+  \item \textbf{Grade notes, then fix what the verifier cannot catch.} Grade the notes answers blind on the 0--2 rubric, with 20\% double-graded. Then work on what the verifier cannot catch: reporting both sides of conflicting notes, and complete answers. These are prompt changes, measured on dev and logged.
+  \item \textbf{Reduce unnecessary questions in actions.} Analyse the 20 cases where the verifier asked about a clear message, most of them wrong times and dates from the model.
+  \item \textbf{Freeze and test.} Write 300 test items per task (with a larger, harder notes collection, so retrieval is a real test) and blind dev items for an honest B0. Freeze prompts and thresholds with the test-set hash, and run each configuration on the test set once.
+\end{enumerate}
+
+\end{document}

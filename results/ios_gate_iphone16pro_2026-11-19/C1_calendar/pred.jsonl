@@ -1,0 +1,10 @@
+{"id":"cal-001","raw_output":"{\"action\": \"clarify\", \"fields\": [\"start_time\"]}"}
+{"id":"cal-002","raw_output":"{\"action\": \"reminder\", \"title\": \"pay rent\", \"start\": \"2026-11-05T12:00:00-05:00\", \"spans\": {\"date\": \"Friday\", \"time\": \"10:00\", \"title\": \"pay rent\"}}"}
+{"id":"cal-003","raw_output":"{\"action\": \"reminder\", \"title\": \"call\", \"start\": \"2026-11-02T19:00:00-05:00\", \"spans\": {\"date\": \"Monday, 2 November 2026\", \"time\": \"at 7\", \"title\": \"call\"}}"}
+{"id":"cal-004","raw_output":"{\"action\": \"event\", \"title\": \"standup\", \"start\": \"2027-03-14T09:00:00-05:00\", \"duration_min\": 60, \"spans\": {\"date\": \"Monday\", \"time\": \"9am\", \"duration\": null, \"title\": \"standup\"}}"}
+{"id":"cal-023","raw_output":"{\"action\": \"reminder\", \"title\": \"take out the trash\", \"start\": \"2026-11-03T08:00:00-05:00\", \"spans\": {\"date\": \"tmrw\", \"time\": \"8am\", \"title\": \"take out the trash\"}}"}
+{"id":"cal-030","raw_output":"{\"action\": \"clarify\", \"fields\": [\"date\"]}"}
+{"id":"cal-042","raw_output":"{\"action\": \"expense\", \"amount\": \"23.50\", \"currency\": \"USD\", \"description\": \"lunch\", \"date\": \"2026-11-01\", \"spans\": {\"amount\": \"$23.50\", \"date\": \"yesterday\", \"description\": \"lunch\"}}"}
+{"id":"cal-043","raw_output":"{\"action\": \"expense\", \"amount\": \"18.00\", \"currency\": \"USD\", \"description\": \"uber\", \"date\": \"2026-11-02\", \"spans\": {\"amount\": \"18 bucks\", \"date\": \"Monday, 2 November 2026\", \"description\": \"uber\"}}"}
+{"id":"cal-055","raw_output":"{\"action\": \"none\"}"}
+{"id":"cal-056","raw_output":"{\"action\": \"none\"}"}

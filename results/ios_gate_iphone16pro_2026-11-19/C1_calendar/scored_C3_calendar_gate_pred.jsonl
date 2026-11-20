@@ -1,0 +1,10 @@
+{"id": "cal-001", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
+{"id": "cal-002", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
+{"id": "cal-003", "action": "clarify", "schema_valid": true, "fields": ["date"]}
+{"id": "cal-004", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
+{"id": "cal-023", "action": "reminder", "schema_valid": true, "start": "2026-11-03T08:00:00-05:00", "title": "take out the trash"}
+{"id": "cal-030", "action": "clarify", "schema_valid": true, "fields": ["date"]}
+{"id": "cal-042", "action": "expense", "schema_valid": true, "amount": "23.50", "currency": "USD", "description": "lunch", "date": "2026-11-01"}
+{"id": "cal-043", "action": "expense", "schema_valid": true, "amount": "18.00", "currency": "USD", "description": "uber", "date": "2026-11-02"}
+{"id": "cal-055", "action": "none", "schema_valid": true}
+{"id": "cal-056", "action": "none", "schema_valid": true}
