@@ -88,3 +88,13 @@ def test_build_retriever_bm25_needs_no_model():
     from retrieval import BM25Index, build_retriever
     idx = build_retriever({"notes_retrieval": {"method": "bm25", "top_k": 3}}, str(ROOT / "data/dev/notes_corpus.jsonl"))
     assert isinstance(idx, BM25Index)
+
+
+def test_render_llama32_pins_the_reference_date():
+    from datetime import datetime
+    from chat_prompt import render_llama32
+    p = render_llama32(" SYS ", "USER\n", datetime.fromisoformat("2026-11-02T10:00:00-05:00"))
+    assert p == ("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
+                 "Cutting Knowledge Date: December 2023\nToday Date: 02 Nov 2026\n\n"
+                 "SYS<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nUSER<|eot_id|>"
+                 "<|start_header_id|>assistant<|end_header_id|>\n\n")

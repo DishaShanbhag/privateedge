@@ -11,12 +11,14 @@ Writes <out>_pred.jsonl (id, answer, citations, abstained, format_ok) and <out>_
 (retrieval, raw output, parse result, decision, latency and speed per item).
 """
 import argparse
+import hashlib
 import json
 import re
 import time
 from datetime import datetime
 from pathlib import Path
 
+from chat_prompt import render_llama32, tokenize_prompt
 from config import load_config
 from io_utils import read_jsonl, write_jsonl
 from metrics import abstention_report, print_reports, retrieval_report
@@ -70,13 +72,13 @@ def load_grammar(cfg, root):
     return LlamaGrammar.from_file(str(root / cfg["grammars"]["notes"]), verbose=False)
 
 
-def generate(llm, messages, grammar, max_tokens):
+def generate(llm, prompt_tokens, grammar, max_tokens):
     t0 = time.perf_counter()
     t_first, pieces = None, []
-    stream = llm.create_chat_completion(messages=messages, temperature=0.0, max_tokens=max_tokens,
-                                        grammar=grammar, stream=True)
+    stream = llm.create_completion(prompt=prompt_tokens, temperature=0.0, max_tokens=max_tokens,
+                                   grammar=grammar, stream=True)
     for chunk in stream:
-        delta = chunk["choices"][0]["delta"].get("content")
+        delta = chunk["choices"][0]["text"]
         if delta:
             if t_first is None:
                 t_first = time.perf_counter()
@@ -86,6 +88,7 @@ def generate(llm, messages, grammar, max_tokens):
     n_tok = len(llm.tokenize(text.encode(), add_bos=False, special=False)) if text else 0
     decode_s = (t_end - t_first) if t_first else 0.0
     return text, {
+        "prompt_tokens": len(prompt_tokens),
         "first_token_ms": round((t_first - t0) * 1000, 1) if t_first else None,
         "total_ms": round((t_end - t0) * 1000, 1),
         "gen_tokens": n_tok,
@@ -115,8 +118,8 @@ def main():
     preds, traj = [], []
     for i, it in enumerate(items, 1):
         hits = index.search(it["question"], k=k)
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": user_message(it, hits)}]
-        raw, timing = generate(llm, messages, grammar, a.max_tokens)
+        prompt = render_llama32(system, user_message(it, hits), datetime.fromisoformat(it["reference_time"]))
+        raw, timing = generate(llm, tokenize_prompt(llm, prompt), grammar, a.max_tokens)
         answer, cits, ok = parse_output(raw)
         abst = is_abstain(answer)
         retrieved = [h.note_id for h in hits]
@@ -132,6 +135,7 @@ def main():
             "quotes_verbatim": all(c["quote"].lower() in notes.get(c["note_id"], {}).get("body", "").lower()
                                    for c in cits),
             "decision": "abstain" if abst else "answer",
+            "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
             "raw_output": raw,
             **timing,
         })
