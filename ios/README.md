@@ -77,11 +77,11 @@ Each run writes to `Documents/runs/<time>_<name>/`:
 - `memory.csv`, sampled every 50 ms;
 - `summary.json`, with the run's peak memory and thermal-state changes.
 
-Copy the folder back with Finder into `local_results/` (not committed), then:
+Copy the folder back with Finder into `results/raw/` (git-ignored). Move a run into `results/` only if a reported number comes from it (see `results/README.md`). Then:
 
 ```bash
 python harness/compare_parity.py --python results/C2_notes_dev --swift <run folder>        # phone vs Mac
-python harness/score_ios_calendar.py --device-run <run folder> --config configs/C3.yaml --out local_results/ios_C3_calendar_dev
+python harness/score_ios_calendar.py --device-run <run folder> --config configs/C3.yaml --out results/raw/ios_C3_calendar_dev
 ```
 
 ## Heat
