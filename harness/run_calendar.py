@@ -140,7 +140,10 @@ class GeminiModel:
 
     def _config(self, system):
         t = self.types
-        kw = dict(system_instruction=system, max_output_tokens=self.max_tokens,
+        # Gemini counts thinking tokens toward max_output_tokens. The answer keeps the same cap as the
+        # local model; thinking gets its own allowance on top (configs/cloud.yaml), still a hard cap.
+        cap = self.max_tokens + int(self.cfg.get("thinking_token_allowance", 0))
+        kw = dict(system_instruction=system, max_output_tokens=cap,
                   thinking_config=t.ThinkingConfig(thinking_level=self.cfg.get("thinking_level", "low")))
         if self.cfg.get("temperature") not in (None, "default"):
             kw["temperature"] = self.cfg["temperature"]
@@ -196,6 +199,7 @@ class GeminiModel:
                 "decode_tok_s": round(n_out / decode_s, 1) if decode_s > 0 and n_out else None,
                 "model_version": getattr(last, "model_version", None),
                 "finish_reason": str(last.candidates[0].finish_reason) if last and last.candidates else None,
+                "hit_max_tokens": bool(last and last.candidates and "MAX_TOKENS" in str(last.candidates[0].finish_reason)),
                 "attempts": attempts, "error": None,
                 "cost_usd": self._cost(n_in, n_out + n_think),  # thinking tokens are billed as output
             }
