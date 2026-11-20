@@ -54,6 +54,8 @@ B0 & 100\%$^*$ & 100\%$^*$ & 60/60 & 0/60 & $^*$circular on dev (see Section~3) 
 C0 prompt only & 38.3\% & 33.3\% & 50/60 & 25/60 & \\
 C1 + grammar & 50.0\% & 35.9\% & 60/60 & 25/60 & gain is almost all on \texttt{none} items \\
 C3 + verifier & \textbf{58.3\%} & \textbf{43.6\%} & 60/60 & \textbf{1/60} & verifier precision 0.92, recall 0.96 \\
+\midrule
+Cloud: Gemini 3.8 Flash & 100\% & 100\% & 60/60 & 0/60 & one run, thinking level low, \$0.06 \\
 \bottomrule
 \end{tabularx}
 
@@ -87,7 +89,21 @@ Actions, C1 & 4.81\,s & 7.7 / 10.1\,s & 13.7 tok/s & 3.01\,GB & fair $\rightarro
 \end{tabularx}
 \end{center}
 
-\textbf{The cloud baseline has no results yet.} The runner for Gemini~3.8~Flash is written. Our first run on the dev pilot stopped at the free tier's limit of 20 requests per day, and no partial results were scored. Turning on billing removes the limit; at the current price the 60-item dev run costs under \$0.10. Until then the central quantity of the project, the cloud-minus-local gap, is unmeasured.
+\textbf{Cloud baseline (actions).} Gemini~3.8~Flash (\texttt{gemini-3.8-flash}, thinking level low, default temperature) ran on the same 60 action items, with the same prompt and output schema, and the returned model version and raw responses saved. It got all 60 right, including all 13 clarify items and all 5 daylight-saving items, with no silent error, at a cloud latency of 2.4\,s (median) and 7.0\,s (p95) and a total cost of \$0.06. On dev, the local model is far from the cloud:
+
+\begin{center}
+\small
+\begin{tabular}{@{}l c c@{}}
+\toprule
+\textbf{Gap, cloud $-$ local (paired bootstrap, 95\% CI)} & \textbf{All actions} & \textbf{Events + reminders} \\
+\midrule
+C1 + grammar & 50.0 points [36.7, 61.7] & 64.1 points [48.7, 79.5] \\
+C3 + verifier & 41.7 points [28.3, 53.3] & 56.4 points [41.0, 71.8] \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Neither configuration is within the 5-point margin. Verification narrows the gap mainly by asking instead of acting wrongly. Two cautions apply: the dev items were drafted with Claude and are cleaner than real messages, and this is a single cloud run on 60 items, so the test set and the team's real messages decide the reported gap. The notes cloud baseline has not been run yet.
 
 \section{What worked and what failed}
 \textbf{Format errors explain most of the raw notes failures, but few of the action failures.} In notes C0, 23 of 60 outputs were invalid JSON, and 19 of those were the model trying to say ``the notes don't say'' without quotation marks. It attempted the right abstention on 11 of the 12 unanswerable questions, but the format broke it. The grammar fixed every one. In actions, the grammar also made every output valid, but 10 of its 11.7 points came from the six \texttt{none} items. The real errors were unchanged: 25 silent errors remained.
@@ -112,6 +128,7 @@ Every change below was made on dev data, for a measured reason, and logged with 
   \item \textbf{A date bug in the prompt.} The model's chat template silently writes the machine's current date (``Today Date'') into every prompt, which contradicts each item's fixed reference time. We now render the prompt ourselves with the item's date. The new prompt is identical to the official template on all 120 items except for that date. On actions, accuracy rose from 35.0\% to 38.3\% for C0, from 46.7\% to 50.0\% for C1 and from 55.0\% to 58.3\% for C3. Both runners and the app now use it, and all results above include it.
   \item \textbf{Conventions made precise before labelling.} The original rule that ``meal words mean PM'' would have put breakfast at 8 in the evening, so we added explicit cues for breakfast, lunch and dinner. The data validator, which recomputes every label from the conventions, also found a resolver bug: a span of just ``sat'' was not read as Saturday.
   \item \textbf{Notes verifier v1 $\rightarrow$ v2.} As proposed, v1 required every number and name in the answer to appear in the cited \emph{quote}. Two of its three false alarms were right answers whose quote was too short to hold the value (citing ``Wifi'' for the wifi password). v2 checks against the whole cited note, and still requires the quote to be verbatim. Every retrieval threshold above zero only added false abstentions, so the threshold is 0.
+  \item \textbf{A fair cap for the cloud model.} Our first Gemini run scored 91.7\%: Gemini counts its hidden reasoning (``thinking'') toward the output-token cap, and our 160-token cap, set for the local model, cut five answers off after a few words. The answer keeps the 160-token cap, and thinking now has its own 1{,}024-token allowance. All 60 outputs became valid and correct.
   \item \textbf{A credible notes baseline.} A keyword baseline that never abstains scores 0 on every unanswerable item. We gave B0 an abstention threshold, tuned on dev, so it abstains correctly on 10 of the 12 unanswerable items. The price is wrong abstentions on 12 answerable ones: keyword scores cannot tell a related note from an answering one.
 \end{itemize}
 
@@ -122,7 +139,7 @@ Every change below was made on dev data, for a measured reason, and logged with 
 \toprule
 \textbf{Criterion (Milestone 2)} & \textbf{Target} & \textbf{Status} \\
 \midrule
-Gap to cloud & $\le$ 5 points, paired-bootstrap CI & Not measured: no cloud results yet \\
+Gap to cloud & $\le$ 5 points, paired-bootstrap CI & \textbf{Missed} on dev for actions: C3 41.7 points [28.3, 53.3]; notes not yet run \\
 Action latency & first token $<$ 1\,s, verified action $<$ 3\,s & \textbf{Missed}: 4.8\,s first token, 7.7\,s full answer (median, phone) \\
 Notes latency & first token $<$ 1.5\,s, answer $<$ 6\,s & Met at the median (1.38\,s, 5.3\,s); worst case 1.62\,s and 6.1\,s \\
 Peak memory & $\le$ 3.0\,GB & At the limit: 3.04\,GB on the phone, with 3.4\,GB still available \\
@@ -137,7 +154,7 @@ Notes answer quality & 0--2 rubric, $\kappa \ge 0.7$ & Not graded yet; proxy 65.
 
 \section{Next steps, in priority order}
 \begin{enumerate}
-  \item \textbf{Run the cloud baseline} on both dev pilots, by enabling billing and adding a Gemini option to the notes runner (with the same C2 chunks), and score it with the same gold labels. We will also run our verifier on the cloud's answers, to see whether it catches cloud mistakes too. Without this step the project cannot answer its question.
+  \item \textbf{Finish the cloud baseline.} Actions are done (Section~2). Add a Gemini option to the notes runner, with the same C2 chunks, and score it with the same gold labels. Then analyse where the local model loses to the cloud on actions, slice by slice, since that gap is what the remaining work has to close.
   \item \textbf{Cut action latency on the phone, then run the protocol.} 659 of the 703 prompt tokens are identical for every request made on the same day. Keeping their processed state between requests (prefix caching, which the Mac harness already does) means the phone reads only the new message, which attacks the 4.8\,s first token directly. A 2K context instead of 4K brings memory under the target: our longest prompt plus answer is under 900 tokens, and the change frees about 0.23\,GB. We will re-run the gate, then the sustained and stress runs under the protocol, which give the heat and battery numbers, and repeat them on the iPhone~17~Pro~Max as the stretch device.
   \item \textbf{Grade notes, then fix what the verifier cannot catch.} Grade the notes answers blind on the 0--2 rubric, with 20\% double-graded. Then work on what the verifier cannot catch: reporting both sides of conflicting notes, and complete answers. These are prompt changes, measured on dev and logged.
   \item \textbf{Reduce unnecessary questions in actions.} Analyse the 20 cases where the verifier asked about a clear message, most of them wrong times and dates from the model.

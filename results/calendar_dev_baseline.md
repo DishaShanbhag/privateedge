@@ -36,9 +36,16 @@ This is the first full run of the calendar/actions task on the 60-item dev pilot
 - **The phone cannot run C3 yet.** The verifier and date rules are Python. Measuring C3 on the iPhone needs a Swift version, or one callable from Swift.
 - **Dev items were drafted with Claude** (Anthropic, a different model family from the cloud baseline) and are pending team review.
 
-## Cloud baseline
+## Cloud baseline (added 2026-11-19)
 
-Still incomplete. The free tier allows 20 Gemini 3.8 Flash requests a day, and failed requests (503s at busy times, timeouts) count against it. By 2026-11-19, 14 of the 60 dev items had a cloud answer; the runner resumes the rest with `--resume --max-retries 0` after each daily reset (about 3 more days), or at once with billing on (about $0.001 per item at the current price). The partial files are not committed or scored until all 60 are done.
+Gemini 3.8 Flash (`gemini-3.8-flash`, thinking level low, default temperature) on the same 60 items, prompt and output schema, with billing on: **60/60 = 100.0%** (events and reminders 39/39), all outputs schema-valid, 0 silent errors, total $0.06, cloud latency median 2.4 s and p95 7.0 s. A first run scored 91.7% because Gemini counts its thinking toward the 160-token output cap; the five affected answers were cut off after a few words. Thinking now has its own allowance (CHANGELOG).
+
+| Gap, cloud - local (paired bootstrap, 95% CI) | All actions | Events and reminders |
+|---|---|---|
+| C1 | 50.0 points [36.7, 61.7] | 64.1 [48.7, 79.5] |
+| C3 | 41.7 points [28.3, 53.3] | 56.4 [41.0, 71.8] |
+
+On dev, the local model is far from the cloud and not within the proposal's 5-point margin. Verification narrows the gap by removing almost all silent errors, mostly by asking instead of acting. Two cautions: the dev items were drafted with Claude and are cleaner than real messages, and this is one cloud run on 60 items. The 300-item test set and the real-message items decide the reported gap.
 
 ## Reproduce
 
