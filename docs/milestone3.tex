@@ -38,7 +38,7 @@ Our question is whether personal-assistant tasks can stay on the phone without a
 
 The local model is Llama~3.2~3B Instruct (Q4\_K\_M, 1.88\,GiB, SHA-256 pinned), run by llama.cpp at temperature~0. Each configuration adds one component, so we can measure what each one is worth. \textbf{B0} is a non-generative baseline (Apple's NSDataDetector plus our own date rules for actions, keyword search for notes). \textbf{C0} is the prompt alone. \textbf{C1} adds grammar-constrained decoding, so the output always parses. \textbf{C2} adds hybrid retrieval for notes: SQLite FTS5 keyword search fused with a 37\,MB embedding model (bge-small) by reciprocal rank fusion. \textbf{C3} adds a verifier that rechecks the model's answer in code and, when a check fails, asks a question (actions) or abstains (notes).
 
-We tune on a Mac and measure on the phone. This is valid only if the phone produces exactly what the Mac produces, so we made both sides identical and tested that they are. Both use the same model file and the same llama.cpp commit (b12387). Both run greedy decoding with the same settings, and both build the prompt in our own code rather than through the chat template (see the date fix in Section~4). We ported the pipeline to Swift and ran that Swift code on the Mac against the Python harness. On all 60 dev items of every configuration, it reproduced the same prompt, the same retrieved notes and the same raw output, character for character. The calendar resolver and verifier were also ported to Swift, so C3 runs on the phone; the port agrees with the Python on all 16,651 test rows, and the app's engine reaches the same final decision as the Mac on all 60 action items. A single iPhone app now holds every task and every measurement run. It has been built for the iPhone and run in the Simulator, but not yet on a physical phone.
+We tune on a Mac and measure on the phone. This is valid only if the phone produces exactly what the Mac produces, so we made both sides identical and tested that they are. Both use the same model file and the same llama.cpp commit (b12387). Both run greedy decoding with the same settings, and both build the prompt in our own code rather than through the chat template (see the date fix in Section~4). We ported the pipeline to Swift and ran that Swift code on the Mac against the Python harness. On all 60 dev items of every configuration, it reproduced the same prompt, the same retrieved notes and the same raw output, character for character. The calendar resolver and verifier were also ported to Swift, so C3 runs on the phone; the port agrees with the Python on all 16,651 test rows, and the app's engine reaches the same final decision as the Mac on all 60 action items. A single iPhone app now holds every task and every measurement run. We ran it on the iPhone~16~Pro, and on all 20 feasibility-gate items it produced exactly the Mac's output (Section~2).
 
 \section{Baseline and current results}
 Each task has a 60-item dev pilot. The action pilot has 20 events, 8 reminders, 13 expenses, 6 \texttt{none} items and 13 clarify items; the notes pilot has 60 questions over 49 notes, 12 of them unanswerable. Both pilots were drafted with Claude, a different model family from the cloud baseline, as the proposal requires, and are being reviewed by the team. All numbers below are on dev only; the test set has not been used.
@@ -72,6 +72,20 @@ C3 + verifier & 63.3\% & 1.00 & 1.00 & 60/60 & 12/12 & 10/48 \\
 
 A \emph{silent error} is a wrong action that reaches the user with no question asked. It is the failure that matters most for an assistant that writes to someone's calendar. For notes, \emph{correct (proxy)} means the answer contains every annotated key fact, or abstains on an unanswerable question. It is an automatic stand-in for the 0--2 rubric, whose blind human grading has not started yet.
 
+\textbf{First phone results.} We ran the feasibility gate on the iPhone~16~Pro: 10 notes items with C2 (index loaded) and 10 action items with C1 generation, Release build, weights read into memory (no mmap), all layers on the GPU. The phone reproduced the Mac's prompts, retrieved notes and raw outputs on all 20 items, so the dev accuracy above is also the phone's accuracy. C3 verification takes under a millisecond on the Mac, so C1's time is effectively the verified action's time. This run was a check, not a protocol run: the phone was plugged in and charging at about 50\% battery.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}l c c c c L@{}}
+\toprule
+\textbf{iPhone 16 Pro} & \textbf{First token (median)} & \textbf{Full answer (median / max)} & \textbf{Decoding} & \textbf{Peak memory} & \textbf{Thermal state} \\
+\midrule
+Notes, C2 & 1.38\,s & 5.3 / 6.1\,s & 13.7 tok/s & 3.04\,GB & nominal $\rightarrow$ fair after 39\,s \\
+Actions, C1 & 4.81\,s & 7.7 / 10.1\,s & 13.7 tok/s & 3.01\,GB & fair $\rightarrow$ serious after 64\,s \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
 \textbf{The cloud baseline has no results yet.} The runner for Gemini~3.8~Flash is written. Our first run on the dev pilot stopped at the free tier's limit of 20 requests per day, and no partial results were scored. Turning on billing removes the limit; at the current price the 60-item dev run costs under \$0.10. Until then the central quantity of the project, the cloud-minus-local gap, is unmeasured.
 
 \section{What worked and what failed}
@@ -87,7 +101,7 @@ A \emph{silent error} is a wrong action that reaches the user with no question a
 
 \textbf{B0's perfect action score is not a valid estimate.} The same person wrote B0's rules, the dev items and the validator, and the validator accepts only labels the rules reproduce. B0 is frozen, and its honest number will come from items written by someone who has not seen the rules.
 
-\textbf{Two system costs showed up early.} Constrained decoding halves decoding speed (notes: 104 to 50 tokens/s on the Mac; actions: 38.6 to 30.7). And the Mac's peak memory footprint was 3.19--3.25\,GB, above our 3.0\,GB target. The phone accounts for memory differently, so this is a warning rather than a result. Mac latency also differs between our two Macs, so we do not judge the latency targets until the phone runs.
+\textbf{On the phone, the model fits but is too slow for actions, and heat makes it slower.} Peak memory was 3.0--3.04\,GB, right at our 3.0\,GB target, with 3.4\,GB still available to the app. That is well below what the Mac suggested (3.3--3.4\,GB). Notes meets its latency targets at the median, but actions miss badly: the first token takes 4.8\,s against a 1\,s target. Most of that time goes to reading a 703-token prompt, and 659 of those tokens (the instructions and template header) are identical for every request made on the same day. Heat shows up within the run itself. Action prompts took 3.3--3.5\,s to the first token while the phone was in the \emph{fair} state, and 4.5--5.3\,s once it reached \emph{serious}; notes rose from 1.2\,s to 1.6\,s as the phone warmed. Decoding is also slow, at 13.7 tokens/s, partly because constrained decoding halves decoding speed (on the Mac, notes drops from 104 to 50 tokens/s).
 
 \section{Iterations and improvements}
 Every change below was made on dev data, for a measured reason, and logged with its effect in the project changelog.
@@ -108,22 +122,22 @@ Every change below was made on dev data, for a measured reason, and logged with 
 \textbf{Criterion (Milestone 2)} & \textbf{Target} & \textbf{Status} \\
 \midrule
 Gap to cloud & $\le$ 5 points, paired-bootstrap CI & Not measured: no cloud results yet \\
-Action latency & first token $<$ 1\,s, verified action $<$ 3\,s & Phone not measured. On a Mac, C3 takes 2.2--2.5\,s median, but p95 reaches 4.9\,s \\
-Notes latency & first token $<$ 1.5\,s, answer $<$ 6\,s & Phone not measured. On a Mac, under 4\,s at p95 \\
-Peak memory & $\le$ 3.0\,GB & At risk: 3.2\,GB on the Mac. Phone not measured \\
-Sustained use, battery & minute-10 speed $\ge$ 60\% of minute 1 & App ready; not yet run on a phone \\
+Action latency & first token $<$ 1\,s, verified action $<$ 3\,s & \textbf{Missed}: 4.8\,s first token, 7.7\,s full answer (median, phone) \\
+Notes latency & first token $<$ 1.5\,s, answer $<$ 6\,s & Met at the median (1.38\,s, 5.3\,s); worst case 1.62\,s and 6.1\,s \\
+Peak memory & $\le$ 3.0\,GB & At the limit: 3.04\,GB on the phone, with 3.4\,GB still available \\
+Sustained use, battery & minute-10 speed $\ge$ 60\% of minute 1 & Not yet run. The gate reached \emph{serious} within 64\,s while charging \\
 Privacy & zero network calls & By design (no network code in the app); packet capture not yet done \\
 Notes answer quality & 0--2 rubric, $\kappa \ge 0.7$ & Not graded yet; proxy 65.0\% (C2). The verifier does not help \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-\textbf{How we now measure heat (response to feedback).} iOS gives apps no temperature, only a thermal state (nominal, fair, serious, critical). The app logs it before and after every request and whenever it changes. Heat matters because it slows the phone down and drains the battery, so we measure it through those effects: decoding speed at minute 1 against minute 10 in a 30-request sustained run and a 10-minute stress run, plus battery used per request. Optionally, we will take infrared-thermometer readings of the phone's back at fixed points in the run.
+\textbf{How we now measure heat (response to feedback).} iOS gives apps no temperature, only a thermal state (nominal, fair, serious, critical). The app logs it before and after every request and whenever it changes. Heat matters because it slows the phone down and drains the battery, so we measure it through those effects: decoding speed at minute 1 against minute 10 in a 30-request sustained run and a 10-minute stress run, plus battery used per request. Optionally, we will take infrared-thermometer readings of the phone's back at fixed points in the run. The gate already shows why this matters. Within about a minute of use the phone went from \emph{nominal} to \emph{serious}, and the time to read an action prompt rose by about half. Since the phone was charging during the gate, the protocol runs (unplugged, 80--90\% battery, after a reboot) will tell us how much of this is the model alone.
 
 \section{Next steps, in priority order}
 \begin{enumerate}
   \item \textbf{Run the cloud baseline} on both dev pilots, by enabling billing and adding a Gemini option to the notes runner (with the same C2 chunks), and score it with the same gold labels. We will also run our verifier on the cloud's answers, to see whether it catches cloud mistakes too. Without this step the project cannot answer its question.
-  \item \textbf{Run on the iPhone~16~Pro}, first the feasibility gate and then the sustained and stress runs. If memory exceeds 3.0\,GB, the first fix is a shorter context. Our longest prompt plus answer is under 900 tokens, yet we reserve 4,096, and a 2K context saves about 0.23\,GB of cache. The fallback is Qwen3~1.7B. We will run the same tests on the iPhone~17~Pro~Max as the stretch device.
+  \item \textbf{Cut action latency on the phone, then run the protocol.} 659 of the 703 prompt tokens are identical for every request made on the same day. Keeping their processed state between requests (prefix caching, which the Mac harness already does) means the phone reads only the new message, which attacks the 4.8\,s first token directly. A 2K context instead of 4K brings memory under the target: our longest prompt plus answer is under 900 tokens, and the change frees about 0.23\,GB. We will re-run the gate, then the sustained and stress runs under the protocol, which give the heat and battery numbers, and repeat them on the iPhone~17~Pro~Max as the stretch device.
   \item \textbf{Grade notes, then fix what the verifier cannot catch.} Grade the notes answers blind on the 0--2 rubric, with 20\% double-graded. Then work on what the verifier cannot catch: reporting both sides of conflicting notes, and complete answers. These are prompt changes, measured on dev and logged.
   \item \textbf{Reduce unnecessary questions in actions.} Analyse the 20 cases where the verifier asked about a clear message, most of them wrong times and dates from the model.
   \item \textbf{Freeze and test.} Write 300 test items per task (with a larger, harder notes collection, so retrieval is a real test) and blind dev items for an honest B0. Freeze prompts and thresholds with the test-set hash, and run each configuration on the test set once.
