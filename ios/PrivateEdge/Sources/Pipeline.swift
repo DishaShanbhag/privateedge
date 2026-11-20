@@ -109,7 +109,13 @@ enum Resources {
 }
 
 let MAX_TOKENS = 160   // as configured for the Mac runs
-let TIMEOUT_S = 30.0
+#if targetEnvironment(simulator)
+// The Simulator runs the model on the Mac's CPU: reading the ~700-token prompt alone can take
+// longer than 30 s, which would cut every answer off. Simulator timings are not measurements.
+let TIMEOUT_S = 600.0
+#else
+let TIMEOUT_S = 30.0   // as configured for the Mac runs
+#endif
 
 /// Runs one item through a config on the given engine (call from the ModelService actor).
 func runPipeline(engine: LlamaEngine, item: Item, config: LadderConfig, today: String,
