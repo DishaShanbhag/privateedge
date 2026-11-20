@@ -1,0 +1,20 @@
+import SwiftUI
+
+@main
+struct PrivateEdgeApp: App {
+    @StateObject private var app = AppModel()
+
+    var body: some Scene {
+        WindowGroup {
+            TabView {
+                CalendarView().tabItem { Label("Calendar", systemImage: "calendar") }
+                NotesView().tabItem { Label("Notes", systemImage: "note.text") }
+                ReplayView().tabItem { Label("Replay", systemImage: "list.bullet.rectangle") }
+                MeasureView().tabItem { Label("Measure", systemImage: "thermometer.medium") }
+                ModelView().tabItem { Label("Model", systemImage: "cpu") }
+            }
+            .environmentObject(app)
+            .task { app.load() }
+        }
+    }
+}

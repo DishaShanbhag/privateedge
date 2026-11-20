@@ -1,0 +1,65 @@
+# XcodeGen spec for the PrivateEdge iPhone app. Generate the Xcode project with:
+#   ios/scripts/make_project.sh        (or: cd ios/PrivateEdge && xcodegen)
+# The .xcodeproj is generated, not committed.
+name: PrivateEdge
+options:
+  bundleIdPrefix: edu.nyu.privateedge
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  CalendarCore:
+    path: ../CalendarCore
+  PrivateEdgeCore:          # Yash's package: notes retrieval, replay runner, metrics; also provides llama.cpp
+    path: ../PrivateEdgeCore
+targets:
+  PrivateEdge:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      # Shared with the Mac harness: the app reads the same files the Python runs use.
+      - path: ../../prompts/calendar_v0.txt
+        buildPhase: resources
+      - path: ../../schemas/calendar.gbnf
+        buildPhase: resources
+      - path: ../../data/dev/calendar_dev.jsonl
+        buildPhase: resources
+      # Run settings exported from configs/ by harness/export_ios_bundle.py (notes, Measure tab)
+      - path: ../App/Bundle
+        type: folder
+        buildPhase: resources
+      # The 2 GB weights (git-ignored). make_project.sh drops this entry if the file is missing.
+      - path: ../../models/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+        buildPhase: resources
+      # The C2 notes embedding model (37 MB, git-ignored), served as embed/ next to the weights.
+      - path: ../../models/embed
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: CalendarCore
+      - package: PrivateEdgeCore
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: PrivateEdge
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        NSCalendarsWriteOnlyAccessUsageDescription: Add the event you confirmed to your calendar.
+        NSRemindersFullAccessUsageDescription: Add the reminder you confirmed to Reminders.
+    entitlements:
+      path: Sources/PrivateEdge.entitlements
+      properties:
+        # Raises the per-app memory limit (2 GB weights + KV cache). See ios/README.md if signing rejects it.
+        com.apple.developer.kernel.increased-memory-limit: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: edu.nyu.privateedge.app
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: NO

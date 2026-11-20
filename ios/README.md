@@ -1,16 +1,154 @@
-# iOS app (owner: Yash)
+# iOS app (owner: Yash; calendar part: Disha)
 
-Swift app running Llama 3.2 3B (Q4_K_M) in-process with llama.cpp on Metal.
+The app runs the same pipeline as the Mac harness, on the phone: Llama 3.2 3B Q4_K_M through llama.cpp on Metal, grammar-constrained decoding, and notes retrieval (SQLite FTS5 BM25, plus bge-small embeddings for C2). While it runs, it measures latency, memory, thermal state and battery.
 
-Planned contents:
-- llama.cpp integration and model loading (pin the GGUF SHA-256 in `configs/_base.yaml`)
-- grammar-constrained decoding (C1)
-- notes index: SQLite FTS5 + small embedding model (C2)
-- verifier hooks (C3)
-- replay harness that reads a `.jsonl` trace and writes predictions plus per-step trajectory logs
-- measurement: peak memory every 50 ms, `os_proc_available_memory`, thermal state per request
+```
+ios/
+  fetch_llama.sh        downloads llama.cpp b12387 (llama.xcframework) and checks its SHA-256
+  PrivateEdgeCore/      Swift package with the pipeline, shared by the app and the Mac tool
+    Sources/PrivateEdgeCore/
+      ChatPrompt.swift    Llama 3.2 prompt with the item's reference date (= harness/chat_prompt.py)
+      NotesTask.swift     notes user message, output parsing, abstain rule (= harness/run_notes.py)
+      Retrieval.swift     BM25 (FTS5), dense, hybrid RRF (= harness/retrieval.py)
+      LlamaEngine.swift   model loading (mmap off), greedy + grammar generation, embeddings
+      Metrics.swift       footprint every 50 ms, os_proc_available_memory, thermal state
+      Replay.swift        runs an exported config; writes pred.jsonl, trajectory.jsonl, memory.csv, summary.json
+    Sources/pe-replay/  Mac command-line tool, used to check the Swift pipeline against Python
+  App/                  SwiftUI app (project.yml -> xcodegen -> PrivateEdge.xcodeproj)
+  PrivateEdge/          the combined app (see below): Calendar, Notes, Replay, Measure and Model tabs
+```
 
-Feasibility gate (by Nov 4): 10 calendar + 10 notes items on the iPhone 16 Pro, notes index loaded, verification on.
-Fallback: Qwen3 1.7B in the same runtime.
+## One app with everything (also runs in the Simulator)
 
-Model weights (`*.gguf`) are git-ignored; download them locally.
+`ios/PrivateEdge` combines both halves on one llama.cpp build:
+
+| Tab | What it does | Code |
+|---|---|---|
+| Calendar | type a message, get one action; C0 / C1 / C3 with the C3 checks run **on the phone** | CalendarCore |
+| Notes | ask a question; search the 49 dev notes (C0/C1 keyword, C2 hybrid) and answer with citations | PrivateEdgeCore |
+| Replay | the 60 calendar dev items, written as the Mac harness's pred / trajectory files | CalendarCore |
+| Measure | feasibility gate, full run, sustained and stress (the `App/` runs, same output folders) | PrivateEdgeCore |
+| Model | load, GPU switch, SHA-256 check, device memory | |
+
+Calendar and Notes share one copy of the weights; Measure frees it, runs with its own copy, then reloads it.
+
+```bash
+source .venv/bin/activate
+ios/scripts/build_llama.sh        # once, ~10 min: llama.cpp b12387 with iPhone + Simulator + macOS slices
+                                  # (into PrivateEdgeCore/Frameworks; replaces the fetch_llama.sh download)
+# models/ needs Llama-3.2-3B-Instruct-Q4_K_M.gguf and embed/bge-small-en-v1.5-q8_0.gguf
+ios/scripts/make_project.sh       # exports App/Bundle if missing, generates the Xcode project
+open ios/PrivateEdge/PrivateEdge.xcodeproj    # pick a Simulator or the iPhone, press Run
+```
+
+The model files are copied into the app, so nothing needs to be dragged onto the phone. In the
+Simulator the model runs on the Mac's CPU (the Simulator's Metal crashes or returns garbage), about
+2-3 minutes per request; its timings, memory and thermal state are the Mac's, not a phone's.
+
+## Why the phone matches the Mac
+
+- **Same inference code.** llama.cpp b12387 is the commit vendored by llama-cpp-python 0.3.37, the version the Mac harness uses.
+- **Same settings.** Greedy sampling with the grammar first, flash attention off, batch 512, 4K context.
+- **Same prompt.** Both sides render the Llama 3.2 chat prompt themselves, with "Today Date" set to the item's reference date, and tokenize it with special tokens parsed and no extra BOS.
+- **One source of truth.** Configs are exported from `configs/*.yaml` by `harness/export_ios_bundle.py`, so prompts, grammars and retrieval settings are never re-typed in Swift. Calendar prompts are rendered in Python with Disha's `user_message()`. The phone only generates, and `harness/score_ios_calendar.py` parses, verifies (C3) and scores the outputs on the Mac.
+
+Checked on the Mac with `pe-replay` against the Python harness (2026-11-19), on all 60 dev items per config:
+
+| Run | Same prompt | Same retrieval | Same raw output |
+|---|---|---|---|
+| C0 notes | 60/60 | 60/60 | 60/60 |
+| C1 notes | 60/60 | 60/60 | 60/60 |
+| C2 notes (hybrid, embeddings) | 60/60 | 60/60 | 60/60 |
+| C1 calendar | 60/60 | n/a | 60/60 |
+
+Peak memory footprint on the Mac was 3.19–3.25 GB, above the 3.0 GB target. Mac and iPhone account for memory differently, so this is a warning to check at the feasibility gate, not a phone result.
+
+## Setup
+
+```bash
+# 1. Framework and bundle (from the repo root, inside .venv)
+ios/fetch_llama.sh
+python harness/export_ios_bundle.py
+
+# 2. Check the Swift pipeline against Python on the Mac (optional)
+cd ios/PrivateEdgeCore && swift build -c release && swift test
+.build/release/pe-replay --bundle ../App/Bundle --models ../../models --run C1_notes --out /tmp/swift_C1_notes
+cd ../.. && python harness/compare_parity.py --python results/C1_notes_dev --swift /tmp/swift_C1_notes
+
+# 3. Generate the Xcode project and open it
+cd ios/App && xcodegen && open PrivateEdge.xcodeproj
+```
+
+In Xcode, under **Signing & Capabilities**, pick your team. Then select the iPhone 16 Pro and build with the **Release** configuration (Product → Scheme → Edit Scheme → Run → Build Configuration → Release).
+
+## Put the models on the phone
+
+The models aren't bundled (2 GB). Connect the iPhone, open **Finder → iPhone → Files → PrivateEdge**, and drag in:
+
+- `models/Llama-3.2-3B-Instruct-Q4_K_M.gguf`
+- the `models/embed/` folder (it needs `embed/bge-small-en-v1.5-q8_0.gguf`)
+
+If anything is missing, the app lists it.
+
+## Runs
+
+| Mode | What it does |
+|---|---|
+| Feasibility gate | 10 notes items (C2, index loaded) and 10 calendar items (C1; C3 verification runs on the Mac) |
+| Full dev run | All 60 items of one config |
+| Sustained | 30 requests, one every 20 s: decode speed at minute 10 vs minute 1, thermal state |
+| Stress | 10 minutes back-to-back, cycling through the items |
+
+Each run writes to `Documents/runs/<time>_<name>/`:
+- `pred.jsonl`
+- `trajectory.jsonl`, which records per request: first-token and total latency, tok/s, peak footprint, minimum available memory, thermal state before and after, and battery;
+- `memory.csv`, sampled every 50 ms;
+- `summary.json`, with the run's peak memory and thermal-state changes.
+
+Copy the folder back with Finder into `results/raw/` (git-ignored). Move a run into `results/` only if a reported number comes from it (see `results/README.md`). Then:
+
+```bash
+python harness/compare_parity.py --python results/C2_notes_dev --swift <run folder>        # phone vs Mac
+python harness/score_ios_calendar.py --device-run <run folder> --config configs/C3.yaml --out results/raw/ios_C3_calendar_dev
+```
+
+## Heat
+
+iOS gives apps no temperature, only `ProcessInfo.thermalState` (nominal, fair, serious, critical). The app logs it before and after every request and whenever it changes. The effect that matters is the slowdown, measured as decode tok/s in the sustained and stress runs. For a °C reading, use an infrared thermometer on the back of the phone at fixed points in the sustained run.
+
+## Protocol reminders
+
+- Release build, airplane mode, Low Power Mode off, fixed brightness. The app keeps the screen on during runs.
+- Reboot before each run, and start unplugged at 80–90% battery in the nominal thermal state.
+
+## Calendar on the phone: Swift C3 (Disha)
+
+```
+ios/
+  CalendarCore/         Swift package: resolver, schema (with Pydantic's coercions), C3 verifier,
+                        title rule, chat prompt, ported from harness/ and eval/
+    Sources/calcore-parity/   compares it with the Python (fixtures from harness/export_swift_parity.py)
+  PrivateEdge/          calendar app: type a message, get the action; C0/C1/C3 and C3 + repair on the
+                        phone, dev-set replay, "Add to Calendar" (project.yml -> scripts/make_project.sh)
+  EngineCheck/          runs PrivateEdge's LlamaEngine.swift on the Mac against the committed Mac runs
+  scripts/              build_llama.sh (llama.cpp b12387 with a Simulator slice), make_project.sh
+```
+
+Checks (2026-11-19):
+- `cd ios/CalendarCore && swift run -c release calcore-parity`: agrees with the Python on all 16,651
+  fixture rows (dev items, message n-grams, edge cases, 150 DST cases, every saved model output and
+  560 verifier decisions on them, the chat prompt on all 60 items).
+- `cd ios/EngineCheck && swift run -c release engine-check C3`: raw output identical to the committed
+  Mac runs on 60/60 items for C0, C1 and C3, and the same final decision after the Swift verifier on 60/60.
+- In the Simulator the model runs on the Mac's CPU (its Metal crashes or gives garbage), so one
+  message takes about 2.5 minutes there. Simulator timings are not phone numbers.
+
+The calendar app still stamps "Today Date" with the date of the committed Mac runs (16 Nov 2026) or the
+device date, not the item's reference date. It switches to the reference date together with
+`run_calendar.py` (see `harness/chat_prompt.py`).
+
+## Not done yet
+
+- C3 inside `App/`. `CalendarCore` (above) is the Swift port of `resolver.py` and `verify_calendar.py`; `App/` does not call it yet, so its calendar runs are verified on the Mac.
+- Energy with Instruments, and the privacy checks (App Privacy Report, packet capture).
+- Whether iOS's built-in SQLite includes FTS5. The app reports "no such module: fts5" if it doesn't, in which case SQLite would have to be bundled.
