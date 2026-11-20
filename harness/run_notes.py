@@ -20,7 +20,7 @@ from pathlib import Path
 from config import load_config
 from io_utils import read_jsonl, write_jsonl
 from metrics import abstention_report, print_reports, retrieval_report
-from retrieval import BM25Index
+from retrieval import build_retriever
 
 ABSTAIN = "the notes don't say"
 
@@ -107,7 +107,7 @@ def main():
     cfg = load_config(a.config)
     k = cfg["notes_retrieval"]["top_k"]
     items = read_jsonl(a.items)[: a.limit]
-    index = BM25Index.from_jsonl(a.corpus)
+    index = build_retriever(cfg, a.corpus, root)
     system = (root / cfg["prompts"]["notes"]).read_text().strip()
     llm, grammar = load_model(cfg, root), load_grammar(cfg, root)
     notes = {n["id"]: n for n in read_jsonl(a.corpus)}

@@ -62,3 +62,63 @@ class BM25Index:
             (match, k),
         ).fetchall()
         return [Hit(*r) for r in rows]
+
+
+# ---------------------------------------------------------------------------------------------
+# Dense and hybrid retrieval (C2). The embedding model is a small GGUF run by llama.cpp, so the
+# phone needs no second runtime. Notes are embedded once at index time; questions at query time.
+
+class DenseIndex:
+    def __init__(self, notes: list[dict], model_path: str, query_prefix: str = "", doc_prefix: str = ""):
+        from llama_cpp import Llama
+        self.notes = {n["id"]: n for n in notes}
+        self.ids = [n["id"] for n in notes]
+        self.query_prefix = query_prefix
+        self.llm = Llama(model_path=model_path, embedding=True, n_gpu_layers=-1, n_ctx=512, verbose=False)
+        self.doc_vecs = [self._embed(doc_prefix + f"{n['title']}. {n['body']}") for n in notes]
+
+    def _embed(self, text: str) -> list[float]:
+        v = self.llm.embed(text)
+        if v and isinstance(v[0], list):  # some models return one vector per token: mean-pool
+            v = [sum(col) / len(v) for col in zip(*v)]
+        norm = sum(x * x for x in v) ** 0.5 or 1.0
+        return [x / norm for x in v]
+
+    def search(self, question: str, k: int = 3) -> list[Hit]:
+        q = self._embed(self.query_prefix + question)
+        scored = sorted(((sum(a * b for a, b in zip(q, d)), i) for i, d in zip(self.ids, self.doc_vecs)),
+                        key=lambda t: (-t[0], t[1]))
+        return [Hit(i, s, self.notes[i]["title"], self.notes[i]["body"]) for s, i in scored[:k]]
+
+
+class HybridIndex:
+    """Reciprocal rank fusion of BM25 and dense rankings: score = sum 1 / (rrf_k + rank)."""
+
+    def __init__(self, bm25: BM25Index, dense: DenseIndex, rrf_k: int = 60, candidates: int = 10):
+        self.bm25, self.dense, self.rrf_k, self.candidates = bm25, dense, rrf_k, candidates
+        self.notes = bm25.notes
+
+    def search(self, question: str, k: int = 3) -> list[Hit]:
+        fused: dict[str, float] = {}
+        for ranking in (self.bm25.search(question, self.candidates), self.dense.search(question, self.candidates)):
+            for rank, h in enumerate(ranking, 1):
+                fused[h.note_id] = fused.get(h.note_id, 0.0) + 1.0 / (self.rrf_k + rank)
+        top = sorted(fused.items(), key=lambda t: (-t[1], t[0]))[:k]
+        return [Hit(i, s, self.notes[i]["title"], self.notes[i]["body"]) for i, s in top]
+
+
+def build_retriever(cfg: dict, corpus_path: str, root=None):
+    """Build the retriever a config asks for (notes_retrieval.method: bm25 | dense | hybrid)."""
+    from pathlib import Path
+    root = Path(root or Path(__file__).resolve().parents[1])
+    with open(corpus_path) as f:
+        notes = [json.loads(line) for line in f if line.strip()]
+    r = cfg["notes_retrieval"]
+    bm25 = BM25Index(notes)
+    if r["method"] == "bm25":
+        return bm25
+    e = r["embedding_model"]
+    dense = DenseIndex(notes, str(root / e["file"]), e.get("query_prefix", ""), e.get("doc_prefix", ""))
+    if r["method"] == "dense":
+        return dense
+    return HybridIndex(bm25, dense, r.get("rrf_k", 60), r.get("bm25_candidates", 10))
