@@ -276,13 +276,19 @@ def main():
     a = ap.parse_args()
 
     cfg = load_config(a.config)
-    items = read_jsonl(a.items)[: a.limit]
+    all_items = read_jsonl(a.items)
     done_p, done_t = {}, {}
     if a.resume and Path(a.out + "_pred.jsonl").exists():
         done_p = {p["id"]: p for p in read_jsonl(a.out + "_pred.jsonl") if not p.get("error")}
         done_t = {t["id"]: t for t in read_jsonl(a.out + "_trajectory.jsonl") if t["id"] in done_p}
         print(f"Resuming: {len(done_p)} items already done")
-    todo = [it for it in items if it["id"] not in done_p]
+    if a.resume:
+        # --limit caps how many NEW items run; the files keep every item already done.
+        items = all_items
+        todo = [it for it in items if it["id"] not in done_p][: a.limit]
+    else:
+        items = all_items[: a.limit]
+        todo = items
     system = (ROOT / cfg["prompts"]["calendar"]).read_text().strip()
     if a.backend == "local":
         model = LocalModel(cfg, a.timeout_s, a.max_tokens)
