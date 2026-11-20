@@ -14,8 +14,8 @@ ios/
       Metrics.swift       footprint every 50 ms, os_proc_available_memory, thermal state
       Replay.swift        runs an exported config; writes pred.jsonl, trajectory.jsonl, memory.csv, summary.json
     Sources/pe-replay/  Mac command-line tool, used to check the Swift pipeline against Python
-  App/                  SwiftUI app (project.yml -> xcodegen -> PrivateEdge.xcodeproj)
-  PrivateEdge/          the combined app (see below): Calendar, Notes, Replay, Measure and Model tabs
+  PrivateEdge/          the app (see below): Calendar, Notes, Replay, Measure and Model tabs
+  Bundle/               run settings and dev data exported from configs/ (generated, git-ignored)
 ```
 
 ## One app with everything (also runs in the Simulator)
@@ -27,7 +27,7 @@ ios/
 | Calendar | type a message, get one action; C0 / C1 / C3 with the C3 checks run **on the phone** | CalendarCore |
 | Notes | ask a question; search the 49 dev notes (C0/C1 keyword, C2 hybrid) and answer with citations | PrivateEdgeCore |
 | Replay | the 60 calendar dev items, written as the Mac harness's pred / trajectory files | CalendarCore |
-| Measure | feasibility gate, full run, sustained and stress (the `App/` runs, same output folders) | PrivateEdgeCore |
+| Measure | feasibility gate, full run, sustained and stress runs, with device measurements | PrivateEdgeCore |
 | Model | load, GPU switch, SHA-256 check, device memory | |
 
 Calendar and Notes share one copy of the weights; Measure frees it, runs with its own copy, then reloads it.
@@ -37,7 +37,7 @@ source .venv/bin/activate
 ios/scripts/build_llama.sh        # once, ~10 min: llama.cpp b12387 with iPhone + Simulator + macOS slices
                                   # (into PrivateEdgeCore/Frameworks; replaces the fetch_llama.sh download)
 # models/ needs Llama-3.2-3B-Instruct-Q4_K_M.gguf and embed/bge-small-en-v1.5-q8_0.gguf
-ios/scripts/make_project.sh       # exports App/Bundle if missing, generates the Xcode project
+ios/scripts/make_project.sh       # exports ios/Bundle if missing, generates the Xcode project
 open ios/PrivateEdge/PrivateEdge.xcodeproj    # pick a Simulator or the iPhone, press Run
 ```
 
@@ -67,34 +67,29 @@ Peak memory footprint on the Mac was 3.19–3.25 GB, above the 3.0 GB target. Ma
 
 ```bash
 # 1. Framework and bundle (from the repo root, inside .venv)
-ios/fetch_llama.sh
+ios/scripts/build_llama.sh        # or ios/fetch_llama.sh for an iPhone-only build (no Simulator slice)
 python harness/export_ios_bundle.py
 
 # 2. Check the Swift pipeline against Python on the Mac (optional)
 cd ios/PrivateEdgeCore && swift build -c release && swift test
-.build/release/pe-replay --bundle ../App/Bundle --models ../../models --run C1_notes --out /tmp/swift_C1_notes
+.build/release/pe-replay --bundle ../Bundle --models ../../models --run C1_notes --out /tmp/swift_C1_notes
 cd ../.. && python harness/compare_parity.py --python results/C1_notes_dev --swift /tmp/swift_C1_notes
 
 # 3. Generate the Xcode project and open it
-cd ios/App && xcodegen && open PrivateEdge.xcodeproj
+ios/scripts/make_project.sh && open ios/PrivateEdge/PrivateEdge.xcodeproj
 ```
 
 In Xcode, under **Signing & Capabilities**, pick your team. Then select the iPhone 16 Pro and build with the **Release** configuration (Product → Scheme → Edit Scheme → Run → Build Configuration → Release).
 
-## Put the models on the phone
+## Models on the phone
 
-The models aren't bundled (2 GB). Connect the iPhone, open **Finder → iPhone → Files → PrivateEdge**, and drag in:
+The build copies `models/Llama-3.2-3B-Instruct-Q4_K_M.gguf` and `models/embed/` into the app, so nothing has to be copied by hand. If they aren't in the app, it looks in its Documents folder (**Finder → iPhone → Files → PrivateEdge**).
 
-- `models/Llama-3.2-3B-Instruct-Q4_K_M.gguf`
-- the `models/embed/` folder (it needs `embed/bge-small-en-v1.5-q8_0.gguf`)
-
-If anything is missing, the app lists it.
-
-## Runs
+## Measure tab runs
 
 | Mode | What it does |
 |---|---|
-| Feasibility gate | 10 notes items (C2, index loaded) and 10 calendar items (C1; C3 verification runs on the Mac) |
+| Feasibility gate | 10 notes items (C2, index loaded) and 10 calendar items (C1; C3 is applied on the Mac with `score_ios_calendar.py`) |
 | Full dev run | All 60 items of one config |
 | Sustained | 30 requests, one every 20 s: decode speed at minute 10 vs minute 1, thermal state |
 | Stress | 10 minutes back-to-back, cycling through the items |
@@ -149,6 +144,6 @@ device date, not the item's reference date. It switches to the reference date to
 
 ## Not done yet
 
-- C3 inside `App/`. `CalendarCore` (above) is the Swift port of `resolver.py` and `verify_calendar.py`; `App/` does not call it yet, so its calendar runs are verified on the Mac.
+- C3 in the Measure tab. Its calendar runs write C1 raw outputs, which are verified on the Mac; the Calendar and Replay tabs already run C3 on the phone with `CalendarCore`.
 - Energy with Instruments, and the privacy checks (App Privacy Report, packet capture).
 - Whether iOS's built-in SQLite includes FTS5. The app reports "no such module: fts5" if it doesn't, in which case SQLite would have to be bundled.

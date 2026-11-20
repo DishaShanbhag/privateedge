@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The notes screen: ask a question, the app searches the 49 dev notes on the phone and answers with
 /// citations, or says "the notes don't say". Uses Yash's PrivateEdgeCore (retrieval, prompt, parsing)
-/// with the run settings exported from configs/ (ios/App/Bundle/manifest.json), and the app's shared
+/// with the run settings exported from configs/ (ios/Bundle/manifest.json), and the app's shared
 /// model, so calendar and notes never hold two copies of the weights.
 struct NotesView: View {
     @EnvironmentObject var app: AppModel

@@ -3,9 +3,9 @@ import PrivateEdgeCore
 import SwiftUI
 import UIKit
 
-// The measurement runs from the proposal (Yash's ios/App RunController, on PrivateEdgeCore's
+// The measurement runs from the proposal (formerly Yash's ios/App RunController, on PrivateEdgeCore's
 // ReplayRunner), inside this app. Output: Documents/runs/<time>_<name>/ with pred.jsonl,
-// trajectory.jsonl, memory.csv (every 50 ms) and summary.json, the same files as ios/App.
+// trajectory.jsonl, memory.csv (every 50 ms) and summary.json.
 
 enum MeasureMode: String, CaseIterable, Identifiable {
     case gate = "Feasibility gate (10 notes + 10 calendar)"

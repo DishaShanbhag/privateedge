@@ -1,7 +1,7 @@
 // pe-replay: run an exported configuration on the Mac with the Swift pipeline, to check that it
 // matches the Python harness before it goes to the phone.
 //
-//   swift run -c release pe-replay --bundle ../App/Bundle --models ../../models --run C1_notes --out OUT [--limit N] [--gate]
+//   swift run -c release pe-replay --bundle ../Bundle --models ../../models --run C1_notes --out OUT [--limit N] [--gate]
 import Foundation
 import PrivateEdgeCore
 
