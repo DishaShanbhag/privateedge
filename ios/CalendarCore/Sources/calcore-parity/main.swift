@@ -10,6 +10,9 @@ guard let data = FileManager.default.contents(atPath: path), let text = String(d
     print("cannot read \(path)"); exit(2)
 }
 
+let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../..").standardized
+let systemPrompt = (try? String(contentsOf: repo.appendingPathComponent("prompts/calendar_v0.txt"), encoding: .utf8)) ?? ""
+
 func s(_ o: JObj, _ k: String) -> String? { o[k]?.asString }
 func outObj(_ value: JV, _ clarify: String?, _ matched: String?) -> JV {
     .obj(JObj([("value", value), ("clarify", clarify.map { .str($0) } ?? .null), ("matched", matched.map { .str($0) } ?? .null)]))
@@ -45,6 +48,8 @@ for line in text.split(separator: "\n") {
     switch t {
     case "user_message":
         got = .str(userMessage(item(r)))
+    case "chat_prompt":
+        got = .str(chatPrompt(system: systemPrompt, user: userMessage(item(r)), today: s(r, "today")!))
     case "resolve":
         let it = item(r)
         let p = resolveAction(s(r, "kind")!, spansOf(r["spans"]), it.message, it.referenceTime, it.tz)
