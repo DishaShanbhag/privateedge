@@ -463,3 +463,27 @@ def test_notes_verifier_quote_grounding_and_other_checks():
     assert "retrieval" in check("tangerine-4471", short, ret, notes, 0.05, "note")["failed"]
     # names must be grounded too
     assert "grounded" in check("Ask Marcus for it", short, ret, notes, 0.0, "note")["failed"]
+
+
+def test_resume_with_limit_keeps_earlier_items(tmp_path, monkeypatch):
+    """--resume --limit 1 runs one new item and keeps every item already done (it once truncated)."""
+    import sys
+    import run_calendar as rc
+    out = str(tmp_path / "run")
+    items = [json.loads(l) for l in open(rc.ROOT / "data/dev/calendar_dev.jsonl")][:4]
+    (tmp_path / "items.jsonl").write_text("".join(json.dumps(i) + "\n" for i in items))
+    done = [{"id": i["id"], "action": "none", "schema_valid": True} for i in items[:2]]
+    (tmp_path / "run_pred.jsonl").write_text("".join(json.dumps(p) + "\n" for p in done))
+    (tmp_path / "run_trajectory.jsonl").write_text("".join(json.dumps({"id": p["id"], "schema_valid": True}) + "\n" for p in done))
+
+    class Fake:
+        name = "fake"
+        def __init__(self, *a, **k): pass
+        def __call__(self, system, user, ref=None):
+            return '{"action": "none"}', {"total_ms": 1.0, "first_token_ms": 1.0}
+    monkeypatch.setattr(rc, "LocalModel", Fake)
+    monkeypatch.setattr(sys, "argv", ["run_calendar.py", "--config", str(rc.ROOT / "configs/C1.yaml"),
+                                      "--items", str(tmp_path / "items.jsonl"), "--out", out, "--resume", "--limit", "1"])
+    rc.main()
+    ids = [json.loads(l)["id"] for l in open(out + "_pred.jsonl")]
+    assert ids == [i["id"] for i in items[:3]]
