@@ -69,6 +69,8 @@ C0 prompt only & 48.3\% & 0.90 & 0.50 & 37/60 & 0/12 & 3/48 \\
 C1 + grammar & 61.7\% & 0.90 & 0.50 & 60/60 & 11/12 & 8/48 \\
 C2 + hybrid retrieval & \textbf{65.0\%} & \textbf{1.00} & \textbf{1.00} & 60/60 & \textbf{12/12} & 7/48 \\
 C3 + verifier & 63.3\% & 1.00 & 1.00 & 60/60 & 12/12 & 10/48 \\
+\midrule
+Cloud: Gemini 3.8 Flash & 80.0\% & 1.00 & 1.00 & 60/60 & 12/12 & 1/48 \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -89,7 +91,7 @@ Actions, C1 & 4.81\,s & 7.7 / 10.1\,s & 13.7 tok/s & 3.01\,GB & fair $\rightarro
 \end{tabularx}
 \end{center}
 
-\textbf{Cloud baseline (actions).} Gemini~3.8~Flash (\texttt{gemini-3.8-flash}, thinking level low, default temperature) ran on the same 60 action items, with the same prompt and output schema, and the returned model version and raw responses saved. It got all 60 right, including all 13 clarify items and all 5 daylight-saving items, with no silent error, at a cloud latency of 2.4\,s (median) and 7.0\,s (p95) and a total cost of \$0.06. On dev, the local model is far from the cloud:
+\textbf{Cloud baseline (actions).} Gemini~3.8~Flash (\texttt{gemini-3.8-flash}, thinking level low, default temperature) ran on the same 60 action items, with the same prompt and output schema, and the returned model version and raw responses saved. It got all 60 right (all 13 clarify and 5 daylight-saving items), with no silent error, at 2.4\,s median latency, for \$0.06:
 
 \begin{center}
 \small
@@ -103,14 +105,14 @@ C3 + verifier & 41.7 points [28.3, 53.3] & 56.4 points [41.0, 71.8] \\
 \end{tabular}
 \end{center}
 
-Neither configuration is within the 5-point margin. Verification narrows the gap mainly by asking instead of acting wrongly. Two cautions apply: the dev items were drafted with Claude and are cleaner than real messages, and this is a single cloud run on 60 items, so the test set and the team's real messages decide the reported gap. The notes cloud baseline has not been run yet.
+Neither configuration is within the 5-point margin. Verification narrows the gap mainly by asking instead of acting wrongly. Caution: dev items are cleaner than real messages and this is one run, so the test set decides. \textbf{Notes:} given the same C2 retrieved notes and prompt, Gemini scores 80.0\% (proxy), abstains correctly on all 12 unanswerable questions and wrongly on only 1 of 48 answerable ones (\$0.04). The gap is 15.0 points [1.7, 28.3] to C2 and 16.7 [3.3, 30.0] to C3, so with retrieval held equal, most of the remaining notes gap is the local model's wrong abstentions.
 
 \section{What worked and what failed}
 \textbf{Format errors explain most of the raw notes failures, but few of the action failures.} In notes C0, 23 of 60 outputs were invalid JSON, and 19 of those were the model trying to say ``the notes don't say'' without quotation marks. It attempted the right abstention on 11 of the 12 unanswerable questions, but the format broke it. The grammar fixed every one. In actions, the grammar also made every output valid, but 10 of its 11.7 points came from the six \texttt{none} items. The real errors were unchanged: 25 silent errors remained.
 
 \textbf{The verifier removes almost all silent errors, at the cost of extra questions.} It re-derives each date, time and amount from the words the model cites, under the conventions, and catches 24 of the 25 wrong actions. Silent errors fall from 25 to 1. But the questions come from the model's own mistakes: 20 of the 25 items C3 gets wrong are messages that were clear, where the model's value was wrong and the verifier rightly asked instead. The underlying weakness is date arithmetic. In C1 the model got the date right on only 53.7\% of items, gave 14 wrong times, got 4 of the 5 daylight-saving items wrong, and acted on 8 of the 13 messages that should have triggered a question.
 
-\textbf{Better retrieval closed the notes retrieval gap, but our dev set is too small to rank models.} Keyword search found the right note for only half of the paraphrased questions (``doctor's appointment'' against a note reading ``Dr.\ Patel, Tue 3pm''); hybrid retrieval found all of them. When the right note was missing, the model mostly abstained rather than guessing, which is the behaviour we want. With only 49 notes, though, all three embedding models we compared scored 0.98--1.00, so the dev set cannot tell them apart.
+\textbf{Better retrieval closed the notes retrieval gap, but our dev set is too small to rank models.} Keyword search found the right note for only half of the paraphrased questions (``doctor's appointment'' against a note reading ``Dr.\ Patel, Tue 3pm''); hybrid retrieval found all of them. With only 49 notes, though, all three embedding models we compared scored 0.98--1.00, so the dev set cannot tell them apart.
 
 \textbf{Remaining notes failures are the model's, not retrieval's.} With every needed note retrieved, C2 still abstains wrongly on 7 answerable questions: on conflicting notes it gives up instead of reporting both, and it sometimes fails to connect a paraphrase to a note it was shown. It also makes the error a verifier is designed for: it quoted ``Bike lock combo 0629'' and answered ``62''.
 
@@ -139,7 +141,7 @@ Every change below was made on dev data, for a measured reason, and logged with 
 \toprule
 \textbf{Criterion (Milestone 2)} & \textbf{Target} & \textbf{Status} \\
 \midrule
-Gap to cloud & $\le$ 5 points, paired-bootstrap CI & \textbf{Missed} on dev for actions: C3 41.7 points [28.3, 53.3]; notes not yet run \\
+Gap to cloud & $\le$ 5 points, paired-bootstrap CI & \textbf{Missed} on dev: actions C3 41.7 points [28.3, 53.3]; notes C2 15.0 [1.7, 28.3] \\
 Action latency & first token $<$ 1\,s, verified action $<$ 3\,s & \textbf{Missed}: 4.8\,s first token, 7.7\,s full answer (median, phone) \\
 Notes latency & first token $<$ 1.5\,s, answer $<$ 6\,s & Met at the median (1.38\,s, 5.3\,s); worst case 1.62\,s and 6.1\,s \\
 Peak memory & $\le$ 3.0\,GB & At the limit: 3.04\,GB on the phone, with 3.4\,GB still available \\
@@ -150,11 +152,11 @@ Notes answer quality & 0--2 rubric, $\kappa \ge 0.7$ & Not graded yet; proxy 65.
 \end{tabularx}
 \end{center}
 
-\textbf{How we now measure heat (response to feedback).} iOS gives apps no temperature, only a thermal state (nominal, fair, serious, critical). The app logs it before and after every request and whenever it changes. Heat matters because it slows the phone down and drains the battery, so we measure it through those effects: decoding speed at minute 1 against minute 10 in a 30-request sustained run and a 10-minute stress run, plus battery used per request. Optionally, we will take infrared-thermometer readings of the phone's back at fixed points in the run. The gate already shows why this matters. Within about a minute of use the phone went from \emph{nominal} to \emph{serious}, and the time to read an action prompt rose by about half. Since the phone was charging during the gate, the protocol runs (unplugged, 80--90\% battery, after a reboot) will tell us how much of this is the model alone.
+\textbf{How we now measure heat (response to feedback).} iOS gives apps no temperature, only a thermal state (nominal, fair, serious, critical). The app logs it before and after every request and whenever it changes. Heat matters because it slows the phone down and drains the battery, so we measure it through those effects: decoding speed at minute 1 against minute 10 in a 30-request sustained run and a 10-minute stress run, plus battery used per request. The gate already shows why this matters. Within about a minute of use the phone went from \emph{nominal} to \emph{serious}, and the time to read an action prompt rose by about half. Since the phone was charging during the gate, the protocol runs (unplugged, 80--90\% battery, after a reboot) will tell us how much of this is the model alone.
 
 \section{Next steps, in priority order}
 \begin{enumerate}
-  \item \textbf{Finish the cloud baseline.} Actions are done (Section~2). Add a Gemini option to the notes runner, with the same C2 chunks, and score it with the same gold labels. Then analyse where the local model loses to the cloud on actions, slice by slice, since that gap is what the remaining work has to close.
+  \item \textbf{Analyse the cloud gap.} Both cloud baselines are done (Section~2). Compare the local model with the cloud slice by slice (dates, daylight saving, clarify items; notes conflicts and wrong abstentions), since that gap is what the remaining work has to close.
   \item \textbf{Cut action latency on the phone, then run the protocol.} 659 of the 703 prompt tokens are identical for every request made on the same day. Keeping their processed state between requests (prefix caching, which the Mac harness already does) means the phone reads only the new message, which attacks the 4.8\,s first token directly. A 2K context instead of 4K brings memory under the target: our longest prompt plus answer is under 900 tokens, and the change frees about 0.23\,GB. We will re-run the gate, then the sustained and stress runs under the protocol, which give the heat and battery numbers, and repeat them on the iPhone~17~Pro~Max as the stretch device.
   \item \textbf{Grade notes, then fix what the verifier cannot catch.} Grade the notes answers blind on the 0--2 rubric, with 20\% double-graded. Then work on what the verifier cannot catch: reporting both sides of conflicting notes, and complete answers. These are prompt changes, measured on dev and logged.
   \item \textbf{Reduce unnecessary questions in actions.} Analyse the 20 cases where the verifier asked about a clear message, most of them wrong times and dates from the model.
