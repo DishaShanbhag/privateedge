@@ -15,7 +15,35 @@ ios/
       Replay.swift        runs an exported config; writes pred.jsonl, trajectory.jsonl, memory.csv, summary.json
     Sources/pe-replay/  Mac command-line tool, used to check the Swift pipeline against Python
   App/                  SwiftUI app (project.yml -> xcodegen -> PrivateEdge.xcodeproj)
+  PrivateEdge/          the combined app (see below): Calendar, Notes, Replay, Measure and Model tabs
 ```
+
+## One app with everything (also runs in the Simulator)
+
+`ios/PrivateEdge` combines both halves on one llama.cpp build:
+
+| Tab | What it does | Code |
+|---|---|---|
+| Calendar | type a message, get one action; C0 / C1 / C3 with the C3 checks run **on the phone** | CalendarCore |
+| Notes | ask a question; search the 49 dev notes (C0/C1 keyword, C2 hybrid) and answer with citations | PrivateEdgeCore |
+| Replay | the 60 calendar dev items, written as the Mac harness's pred / trajectory files | CalendarCore |
+| Measure | feasibility gate, full run, sustained and stress (the `App/` runs, same output folders) | PrivateEdgeCore |
+| Model | load, GPU switch, SHA-256 check, device memory | |
+
+Calendar and Notes share one copy of the weights; Measure frees it, runs with its own copy, then reloads it.
+
+```bash
+source .venv/bin/activate
+ios/scripts/build_llama.sh        # once, ~10 min: llama.cpp b12387 with iPhone + Simulator + macOS slices
+                                  # (into PrivateEdgeCore/Frameworks; replaces the fetch_llama.sh download)
+# models/ needs Llama-3.2-3B-Instruct-Q4_K_M.gguf and embed/bge-small-en-v1.5-q8_0.gguf
+ios/scripts/make_project.sh       # exports App/Bundle if missing, generates the Xcode project
+open ios/PrivateEdge/PrivateEdge.xcodeproj    # pick a Simulator or the iPhone, press Run
+```
+
+The model files are copied into the app, so nothing needs to be dragged onto the phone. In the
+Simulator the model runs on the Mac's CPU (the Simulator's Metal crashes or returns garbage), about
+2-3 minutes per request; its timings, memory and thermal state are the Mac's, not a phone's.
 
 ## Why the phone matches the Mac
 

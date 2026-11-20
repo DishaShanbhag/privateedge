@@ -11,7 +11,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [.package(path: "../CalendarCore")],
     targets: [
-        .binaryTarget(name: "llama", path: "../vendor/b12387/build-apple/llama.xcframework"),
+        .binaryTarget(name: "llama", path: "../PrivateEdgeCore/Frameworks/llama.xcframework"),
         .executableTarget(name: "engine-check", dependencies: ["llama", "CalendarCore"]),
     ]
 )

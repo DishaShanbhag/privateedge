@@ -20,6 +20,21 @@ actor ModelService {
         return e.loadMs
     }
 
+    /// Frees the weights (the Measure tab loads its own copy through Yash's ReplayRunner).
+    func unload() { engine = nil }
+
+    private var notes: NotesEngine?
+    func notesEngine() throws -> NotesEngine {
+        if notes == nil { notes = try NotesEngine() }
+        return notes!
+    }
+
+    func generate(prompt: String, grammar: String?, maxTokens: Int,
+                  onText: (@Sendable (String) -> Void)? = nil) throws -> (String, GenInfo) {
+        guard let engine else { throw EngineError.context }
+        return try engine.generate(prompt: prompt, grammar: grammar, maxTokens: maxTokens, timeoutS: TIMEOUT_S, onText: onText)
+    }
+
     func run(_ item: Item, _ config: LadderConfig, today: String,
              onText: (@Sendable (String) -> Void)? = nil) throws -> RunResult {
         guard let engine else { throw EngineError.context }
@@ -59,6 +74,11 @@ final class AppModel: ObservableObject {
         return String(format: "%.2f GB", n.doubleValue / 1e9)
     }
 
+    func unload() async {
+        await service.unload()
+        state = .idle
+    }
+
     func load() {
         guard let path = modelPath else { state = .missing; return }
         if case .loading = state { return }
@@ -77,8 +97,17 @@ final class AppModel: ObservableObject {
 
     /// Test hook: launch with `-autorun "message"` to run it through C3 once the model loads and
     /// print the result to the console (used to check the app without tapping).
+    /// `-autonotes "question"` does the same for a notes question with C2.
     private func autorun() async {
         let args = ProcessInfo.processInfo.arguments
+        if let j = args.firstIndex(of: "-autonotes"), j + 1 < args.count {
+            do {
+                let r = try await service.answerNote(args[j + 1], runName: "C2_notes")
+                NSLog("%@", "AUTONOTES C2 search=\(r.searchMs)ms hits=\(r.hits.map(\.noteID)) first=\(r.info.firstTokenMs ?? -1)ms total=\(r.info.totalMs)ms answer=\(r.answer) citations=\(r.citations.map(\.note_id)) abstained=\(r.abstained) format_ok=\(r.formatOK)")
+            } catch {
+                NSLog("%@", "AUTONOTES error \(error)")
+            }
+        }
         guard let i = args.firstIndex(of: "-autorun"), i + 1 < args.count else { return }
         let configs = args.contains("-allConfigs") ? [LadderConfig.C0, .C1, .C3] : [.C3]
         for cfg in configs {

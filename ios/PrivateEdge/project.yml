@@ -10,6 +10,8 @@ options:
 packages:
   CalendarCore:
     path: ../CalendarCore
+  PrivateEdgeCore:          # Yash's package: notes retrieval, replay runner, metrics; also provides llama.cpp
+    path: ../PrivateEdgeCore
 targets:
   PrivateEdge:
     type: application
@@ -23,13 +25,20 @@ targets:
         buildPhase: resources
       - path: ../../data/dev/calendar_dev.jsonl
         buildPhase: resources
+      # Run settings exported from configs/ by harness/export_ios_bundle.py (notes, Measure tab)
+      - path: ../App/Bundle
+        type: folder
+        buildPhase: resources
       # The 2 GB weights (git-ignored). make_project.sh drops this entry if the file is missing.
       - path: ../../models/Llama-3.2-3B-Instruct-Q4_K_M.gguf
         buildPhase: resources
+      # The C2 notes embedding model (37 MB, git-ignored), served as embed/ next to the weights.
+      - path: ../../models/embed
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: CalendarCore
-      - framework: ../vendor/llama.xcframework
-        embed: true
+      - package: PrivateEdgeCore
     info:
       path: Sources/Info.plist
       properties:

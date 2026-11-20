@@ -13,7 +13,11 @@ public final class LlamaModel {
     public init(path: String, mmap: Bool = false) throws {
         _ = backendOnce
         var mp = llama_model_default_params()
+        #if targetEnvironment(simulator)
+        mp.n_gpu_layers = 0   // the Simulator's Metal crashes loading the weights or returns garbage (tested 2026-11-19)
+        #else
         mp.n_gpu_layers = -1
+        #endif
         mp.load_mode = mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE
         guard let m = llama_model_load_from_file(path, mp) else { throw CoreError.model("cannot load \(path)") }
         model = m

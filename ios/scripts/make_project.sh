@@ -5,7 +5,14 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 command -v xcodegen >/dev/null || { echo "xcodegen missing: brew install xcodegen"; exit 1; }
-[ -d "$HERE/vendor/llama.xcframework" ] || { echo "Build llama.cpp first: ios/scripts/build_llama.sh"; exit 1; }
+[ -d "$HERE/PrivateEdgeCore/Frameworks/llama.xcframework/ios-arm64_x86_64-simulator" ] || [ -d "$HERE/PrivateEdgeCore/Frameworks/llama.xcframework/ios-arm64-simulator" ] || {
+  echo "Build llama.cpp with a Simulator slice first: ios/scripts/build_llama.sh"; exit 1; }
+if [ ! -f "$HERE/App/Bundle/manifest.json" ]; then
+  echo "Exporting the run bundle (harness/export_ios_bundle.py)..."
+  (cd "$ROOT" && python harness/export_ios_bundle.py)
+fi
+[ -f "$ROOT/models/embed/bge-small-en-v1.5-q8_0.gguf" ] || {
+  echo "Missing models/embed/bge-small-en-v1.5-q8_0.gguf (C2 notes). See ios/README.md."; exit 1; }
 
 SPEC="$HERE/PrivateEdge/project.yml"
 if [ ! -f "$ROOT/models/Llama-3.2-3B-Instruct-Q4_K_M.gguf" ]; then
