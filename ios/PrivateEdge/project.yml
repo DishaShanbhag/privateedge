@@ -26,7 +26,7 @@ targets:
       - path: ../../data/dev/calendar_dev.jsonl
         buildPhase: resources
       # Run settings exported from configs/ by harness/export_ios_bundle.py (notes, Measure tab)
-      - path: ../App/Bundle
+      - path: ../Bundle
         type: folder
         buildPhase: resources
       # The 2 GB weights (git-ignored). make_project.sh drops this entry if the file is missing.

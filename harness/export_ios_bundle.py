@@ -1,6 +1,6 @@
 """Export configs, prompts, grammars and dev data into a bundle the iOS app (and pe-replay) reads.
 
-Usage: python harness/export_ios_bundle.py [--out ios/App/Bundle]
+Usage: python harness/export_ios_bundle.py [--out ios/Bundle]
 
 The YAML configs stay the single source of truth. Notes: the app retrieves and builds the prompt
 itself (so retrieval is measured on the phone), from the system prompt and settings exported here.
@@ -81,7 +81,7 @@ def calendar_spec(cfg_name, out, items):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "ios/App/Bundle"))
+    ap.add_argument("--out", default=str(ROOT / "ios/Bundle"))
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
