@@ -3,4 +3,4 @@ inherits: C0.yaml
 constrained_decoding: true
 grammars:
   notes: schemas/notes.gbnf
-  calendar: schemas/calendar.gbnf   # TODO (Disha + Yash): actions schema, incl. expenses
+  calendar: schemas/calendar.gbnf   # events, reminders, expenses, none, clarify

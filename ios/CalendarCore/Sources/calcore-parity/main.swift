@@ -49,7 +49,7 @@ for line in text.split(separator: "\n") {
     case "user_message":
         got = .str(userMessage(item(r)))
     case "chat_prompt":
-        got = .str(chatPrompt(system: systemPrompt, user: userMessage(item(r)), today: s(r, "today")!))
+        got = .str(chatPrompt(system: systemPrompt, user: userMessage(item(r)), today: templateDate(item(r))))
     case "resolve":
         let it = item(r)
         let p = resolveAction(s(r, "kind")!, spansOf(r["spans"]), it.message, it.referenceTime, it.tz)

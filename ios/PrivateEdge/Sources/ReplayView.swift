@@ -7,7 +7,6 @@ import SwiftUI
 struct ReplayView: View {
     @EnvironmentObject var app: AppModel
     @State private var config: LadderConfig = .C3
-    @State private var matchMac = true
     @State private var pauseS = 0
     @State private var running = false
     @State private var stopRequested = false
@@ -21,7 +20,6 @@ struct ReplayView: View {
     @State private var error: String?
 
     private let items = Resources.devItems
-    static let macToday = "16 Nov 2026"  // the date the committed Mac dev runs were made
 
     var body: some View {
         NavigationStack {
@@ -30,7 +28,6 @@ struct ReplayView: View {
                     Picker("Config", selection: $config) {
                         ForEach(LadderConfig.allCases) { Text($0.label).tag($0) }
                     }
-                    Toggle("Prompt date as in the Mac runs (\(Self.macToday))", isOn: $matchMac)
                     Picker("Pause between messages", selection: $pauseS) {
                         Text("none").tag(0)
                         Text("20 s (sustained-use test)").tag(20)
@@ -83,7 +80,7 @@ struct ReplayView: View {
     private func start() {
         running = true; stopRequested = false; done = 0; log = []; totals = []; firsts = []; peakMB = 0; files = []; error = nil
         UIApplication.shared.isIdleTimerDisabled = true
-        let cfg = config, today = matchMac ? Self.macToday : llamaToday(), pause = pauseS
+        let cfg = config, pause = pauseS
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "")
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("results")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -96,7 +93,8 @@ struct ReplayView: View {
                 if stopRequested { break }
                 if n > 0 && pause > 0 { try? await Task.sleep(for: .seconds(pause)) }
                 do {
-                    let r = try await app.service.run(it, cfg, today: today)
+                    // "Today Date" = the item's reference date, as the Mac runner (chat_prompt.py)
+                    let r = try await app.service.run(it, cfg, today: templateDate(it))
                     preds += dumpJSON(.obj(r.predRow())) + "\n"
                     traj += dumpJSON(.obj(r.trajectoryRow(backend: BACKEND_NAME))) + "\n"
                     // Write after every item so a stopped run keeps what it did.

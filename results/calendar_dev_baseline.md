@@ -1,4 +1,4 @@
-# Calendar and actions: first dev-pilot baseline (2026-11-16)
+# Calendar and actions: dev-pilot results (first run 2026-11-16; re-run 2026-11-19 with the date fix)
 
 This is the first full run of the calendar/actions task on the 60-item dev pilot (`data/dev/calendar_dev.jsonl`). Every configuration ran on a Mac with the pinned Llama 3.2 3B Q4_K_M file through llama.cpp, the same model and engine the iPhone app will use. Quality numbers therefore carry over to the phone; latency numbers do not and are Mac-only. The cloud baseline (Gemini 3.8 Flash) has not run yet; see "Cloud baseline" below.
 
@@ -8,14 +8,16 @@ This is the first full run of the calendar/actions task on the 60-item dev pilot
 |---|---|---|---|---|---|---|
 | B0 (rules + NSDataDetector) | 100.0%* | 100.0%* | 60/60 | 0/60 | – | < 0.001 |
 | B0, NSDataDetector only | 93.3%* | 89.7%* | 60/60 | 0/60 | – | < 0.001 |
-| C0 (prompt only) | 35.0% | 28.2% | 49/60 | 26/60 | – | 1.72 / 2.20 / 2.45 |
-| C1 (+ grammar) | 46.7% | 30.8% | 60/60 | 26/60 | – | 2.20 / 2.79 / 3.02 |
-| C3 v1 (+ verification, strict spans) | 38.3% | 28.2% | 60/60 | 1/60 | 0.74 / 0.96* | 2.21 / 3.03 / 4.93 |
-| **C3 (+ verification)** | **55.0%** | **38.5%** | 60/60 | **1/60** | 0.93 / 0.96* | 2.22 / 2.88 / 3.05 |
-| Ablation: C3 + one repair retry | 61.7%* | 46.2%* | 60/60 | 1/60 | 0.93 / 0.96* | 2.58 / 5.22 / 7.90 |
-| Ablation: C3 + B0 fallback | 88.3%* | 84.6%* | 60/60 | 1/60 | 0.93 / 0.96* | 2.26 / 3.64 / 3.86 |
+| C0 (prompt only) | 38.3% | 33.3% | 50/60 | 25/60 | – | 1.97 / 4.11 / 5.61 |
+| C1 (+ grammar) | 50.0% | 35.9% | 60/60 | 25/60 | – | 2.62 / 4.85 / 5.62 |
+| C3 v1 (+ verification, strict spans; before the date fix) | 38.3% | 28.2% | 60/60 | 1/60 | 0.74 / 0.96* | 2.21 / 3.03 / 4.93 |
+| **C3 (+ verification)** | **58.3%** | **43.6%** | 60/60 | **1/60** | 0.92 / 0.96* | 2.52 / 4.85 / 5.29 |
+| Ablation: C3 + one repair retry | 65.0%* | 51.3%* | 60/60 | 1/60 | 0.92 / 0.96* | 3.21 / 6.87 / 7.77 |
+| Ablation: C3 + B0 fallback | 90.0%* | 87.2%* | 60/60 | 1/60 | 0.92 / 0.96* | 2.58 / 4.84 / 6.40 |
 
 \* Optimistic on dev; see "Limitations". "All actions" covers events, reminders, expenses, `none` and clarify items. "Events and reminders" is the task as proposed in Milestone 2 (39 items, including their clarify items). A silent error is an action that is wrong and reaches the user with no clarify question. C2 is identical to C1 for calendar (hybrid retrieval applies to notes only), so it was not run separately.
+
+**Update 2026-11-19.** The model's chat template had written the run machine's date ("Today Date: 16 Nov 2026") into every prompt, contradicting each item's own date. The runner now sets it to the item's reference date (`harness/chat_prompt.py`), and every configuration above was re-run: each gained about 3 points (C3 55.0% -> 58.3%), with the same single silent error. The numbers in the sections below are from the first run; the pattern is unchanged. Mac timings in this re-run are higher than the first run's (other work was running on the Mac) and are Mac-only either way.
 
 ## What each step showed
 
@@ -36,7 +38,7 @@ This is the first full run of the calendar/actions task on the 60-item dev pilot
 
 ## Cloud baseline
 
-The Gemini run has not produced results yet. The free tier allows 20 Gemini 3.8 Flash requests per day, and the dev pilot needs 60, with 300 more for the test set. The run stopped on the quota, and none of its failed requests were scored. The runner now stops when a daily quota is hit, resumes only the unfinished items (`--resume`), and the scorer refuses to score a run with failed requests. Turning on billing for the API project removes the daily cap. At the current introductory price ($0.75 per million input tokens, $3.75 per million output tokens, until 31 Dec 2026), the 60-item dev run should cost well under $0.10.
+Still incomplete. The free tier allows 20 Gemini 3.8 Flash requests a day, and failed requests (503s at busy times, timeouts) count against it. By 2026-11-19, 14 of the 60 dev items had a cloud answer; the runner resumes the rest with `--resume --max-retries 0` after each daily reset (about 3 more days), or at once with billing on (about $0.001 per item at the current price). The partial files are not committed or scored until all 60 are done.
 
 ## Reproduce
 

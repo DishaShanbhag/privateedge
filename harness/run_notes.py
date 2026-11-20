@@ -23,6 +23,7 @@ from config import load_config
 from io_utils import read_jsonl, write_jsonl
 from metrics import abstention_report, print_reports, retrieval_report
 from retrieval import build_retriever
+from verify_notes import check as verify_answer
 
 ABSTAIN = "the notes don't say"
 
@@ -121,8 +122,17 @@ def main():
         prompt = render_llama32(system, user_message(it, hits), datetime.fromisoformat(it["reference_time"]))
         raw, timing = generate(llm, tokenize_prompt(llm, prompt), grammar, a.max_tokens)
         answer, cits, ok = parse_output(raw)
-        abst = is_abstain(answer)
         retrieved = [h.note_id for h in hits]
+        before, verdict = None, None
+        if cfg.get("verification"):
+            # C3: code checks (harness/verify_notes.py); a failed answer becomes "the notes don't say".
+            vc = cfg.get("verifier") or {}
+            before = {"answer": answer, "citations": cits}
+            verdict = verify_answer(answer, cits, [{"note_id": h.note_id, "score": h.score} for h in hits], notes,
+                                    float(vc.get("notes_retrieval_threshold") or 0.0), vc.get("notes_grounding", "quote"))
+            if not verdict["ok"]:
+                answer, cits = ABSTAIN, []
+        abst = is_abstain(answer)
         gold = set(it["gold"]["support"])
         preds.append({"id": it["id"], "answer": answer, "citations": cits, "abstained": abst, "format_ok": ok})
         traj.append({
@@ -134,6 +144,7 @@ def main():
             # Diagnostic only (C3 is where this check changes behaviour):
             "quotes_verbatim": all(c["quote"].lower() in notes.get(c["note_id"], {}).get("body", "").lower()
                                    for c in cits),
+            "pred_before_verify": before, "verifier": verdict,
             "decision": "abstain" if abst else "answer",
             "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
             "raw_output": raw,

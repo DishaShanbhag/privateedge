@@ -9,7 +9,7 @@ cal-007,1,ok,1
 cal-008,0,wrong_time,1
 cal-009,0,wrong_time,1
 cal-010,0,wrong_time,1
-cal-011,0,schema_invalid,1
+cal-011,1,ok,1
 cal-012,1,ok,1
 cal-013,0,wrong_time,1
 cal-014,1,ok,1
@@ -20,7 +20,7 @@ cal-018,0,schema_invalid,1
 cal-019,0,wrong_time,1
 cal-020,0,wrong_time,1
 cal-021,0,unneeded_clarify,1
-cal-022,0,wrong_time,1
+cal-022,1,ok,1
 cal-023,1,ok,1
 cal-024,1,ok,1
 cal-025,0,wrong_time,1

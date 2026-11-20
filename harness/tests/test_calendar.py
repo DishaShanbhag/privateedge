@@ -416,7 +416,7 @@ def test_daily_quota_stops_run_instead_of_burning_requests():
     class Fake:
         name = "fake"
 
-        def __call__(self, system, user):
+        def __call__(self, system, user, ref=None):
             calls.append(1)
             raise QuotaExhausted("429: quota resets in 11.1 h")
 
@@ -432,3 +432,34 @@ def test_scorer_refuses_runs_with_infrastructure_errors(tmp_path):
     r = subprocess.run([sys.executable, str(ROOT / "eval/score_calendar.py"), "--gold",
                         str(ROOT / "data/dev/calendar_dev.jsonl"), "--pred", str(pred)], capture_output=True, text=True)
     assert r.returncode != 0 and "Refusing to score" in (r.stderr + r.stdout)
+
+
+# ---------------------------------------------------------------- notes C3 verifier
+
+def test_notes_verifier_catches_wrong_number_and_passes_supported_answer():
+    from verify_notes import check
+    notes = {"n-010": {"body": "Bike lock combo 0629."}, "n-002": {"body": "Rent is 1200 dollars, due on the 1st."}}
+    ret = [{"note_id": "n-010", "score": 0.03}, {"note_id": "n-002", "score": 0.02}]
+    bad = check("62-9", [{"note_id": "n-010", "quote": "Bike lock combo 0629."}], ret, notes, 0.0, "quote")
+    assert not bad["ok"] and bad["failed"] == ["grounded"]
+    good = check("0629", [{"note_id": "n-010", "quote": "Bike lock combo 0629."}], ret, notes, 0.0, "quote")
+    assert good["ok"]
+    # "$1,200" vs "1200 dollars": reformatted numbers are not false alarms
+    assert check("$1,200, due on the 1st", [{"note_id": "n-002", "quote": "Rent is 1200 dollars, due on the 1st."}],
+                 ret, notes, 0.0, "quote")["ok"]
+
+
+def test_notes_verifier_quote_grounding_and_other_checks():
+    from verify_notes import check
+    notes = {"n-004": {"body": "Home wifi: network ApartmentDsix, password tangerine-4471."}}
+    ret = [{"note_id": "n-004", "score": 0.03}]
+    short = [{"note_id": "n-004", "quote": "Home wifi"}]
+    assert not check("tangerine-4471", short, ret, notes, 0.0, "quote")["ok"]   # v1: the quote must hold it
+    assert check("tangerine-4471", short, ret, notes, 0.0, "note")["ok"]         # v2: the cited note holds it
+    assert check("the notes don't say", [], ret, notes, 0.0, "quote")["ok"]      # abstentions pass through
+    assert "cited" in check("tangerine-4471", [], ret, notes, 0.0, "note")["failed"]
+    assert "quote" in check("x", [{"note_id": "n-004", "quote": "made up"}], ret, notes, 0.0, "note")["failed"]
+    assert "cited" in check("x", [{"note_id": "n-999", "quote": "Home wifi"}], ret, notes, 0.0, "note")["failed"]
+    assert "retrieval" in check("tangerine-4471", short, ret, notes, 0.05, "note")["failed"]
+    # names must be grounded too
+    assert "grounded" in check("Ask Marcus for it", short, ret, notes, 0.0, "note")["failed"]

@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from b0_calendar import run_one
 from calendar_schema import parse_action
 from config import load_config
-from run_calendar import ROOT, LocalModel, user_message
+from run_calendar import ROOT, LocalModel, local_now, user_message
 
 
 def show(label, action, extra=""):
@@ -42,7 +42,7 @@ def main():
 
     cfg = load_config(ROOT / a.config)
     model = LocalModel(cfg, timeout_s=30, max_tokens=160)
-    raw, info = model((ROOT / cfg["prompts"]["calendar"]).read_text().strip(), user_message(item))
+    raw, info = model((ROOT / cfg["prompts"]["calendar"]).read_text().strip(), user_message(item), local_now(item))
     action, err = parse_action(raw)
     show(f"{cfg['name']} model output:", action, f"  ({info['total_ms']:.0f} ms on this Mac)")
     if err:

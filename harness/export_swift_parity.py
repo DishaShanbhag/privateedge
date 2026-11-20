@@ -9,7 +9,6 @@ and edge-case JSON for the schema. Dev data only; never data/test/.
 """
 import json
 import sys
-from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -20,7 +19,8 @@ sys.path.insert(0, str(ROOT / "eval"))
 from calendar_schema import parse_action, to_pred, validate_action  # noqa: E402
 from resolver import (combine, local_ref, parse_amount, parse_date, parse_duration,  # noqa: E402
                       parse_time, resolve_action)
-from run_calendar import user_message  # noqa: E402
+from run_calendar import local_now, user_message  # noqa: E402
+from chat_prompt import render_llama32  # noqa: E402
 from score_calendar import unsupported_words  # noqa: E402
 from verify_calendar import check  # noqa: E402
 
@@ -121,36 +121,16 @@ def ngrams(message, n=6):
     return sorted(out)
 
 
-def chat_formatter():
-    """llama-cpp-python's renderer for the GGUF's own chat template (what the Mac harness uses)."""
-    model = ROOT / "models/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
-    if not model.exists():
-        print("model file missing: skipping chat_prompt rows")
-        return None
-    from llama_cpp import Llama, llama_chat_format
-    llm = Llama(model_path=str(model), vocab_only=True, verbose=False)
-    eos = llm._model.token_get_text(llm.token_eos())
-    return llama_chat_format.Jinja2ChatFormatter(
-        template=llm.metadata["tokenizer.chat_template"], eos_token=eos,
-        bos_token=llm._model.token_get_text(llm.token_bos()), add_generation_prompt=True)
-
-
 def main():
     items =[json.loads(line) for line in open(ROOT / "data/dev/calendar_dev.jsonl") if line.strip()]
     rows = []
     ctx = lambda it: {"id": it["id"], "message": it["message"], "reference_time": it["reference_time"], "tz": it["tz"]}
 
-    fmt = chat_formatter()
     system = (ROOT / "prompts/calendar_v0.txt").read_text()
     for it in items:
         rows.append({"t": "user_message", "item": ctx(it), "out": user_message(it)})
-        if fmt:
-            # The template stamps today's date; pin it so the fixture does not change daily.
-            p = fmt(messages=[{"role": "system", "content": system},
-                              {"role": "user", "content": user_message(it)}]).prompt
-            today = datetime.now().strftime("%d %b %Y")
-            rows.append({"t": "chat_prompt", "item": ctx(it), "today": "16 Nov 2026",
-                         "out": p.replace(f"Today Date: {today}\n", "Today Date: 16 Nov 2026\n", 1)})
+        # The prompt the Mac runner feeds the model (chat_prompt.render_llama32, reference date).
+        rows.append({"t": "chat_prompt", "item": ctx(it), "out": render_llama32(system, user_message(it), local_now(it))})
         g = it["gold"]
         kind = g["action"] if g["action"] in ("event", "reminder", "expense") else g.get("intended")
         if kind:
