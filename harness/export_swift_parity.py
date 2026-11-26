@@ -39,6 +39,13 @@ EXTRA = [  # edge cases beyond the dev messages
     "breakfast at 8", "dinner at 8", "lunch at 1", "lunch at 11", "morning run 6", "Nov 1 2:30am",
     "Mar 14 2:30am", "Nov 1 1:30am", "dinner 11/26", "dentist Dec 31st 4pm", "Jan 1st 9am", "May 5",
     "may I come", "mar 3", "3rd of March", "the 2nd", "on the 15th", "١٢ pm", "dinner 🍕 Friday at 7",
+    # convention fixes 2026-11-25
+    "drinks fri or sat", "coffee wed or thurs", "sat/sun brunch", "sun and sand", "Friday next week",
+    "a week from Friday", "in 3 days", "in two weeks", "in a week", "11-20", "11.20", "11-20-27", "9.30am",
+    "1.5 hours", "lunch 11.20", "3 days ago", "two days ago", "tonight 7", "this evening 8", "meet 3 people tonight",
+    "half past 6 dinner", "quarter past 9 breakfast", "quarter to 7 dinner", "half past 6", "quarter to 12 lunch",
+    "C$20", "CA$20", "A$15", "c$5 coffee", "remind me tomorrow evening to call mom", "remind me tonight",
+    "coffee 4.75", "11.20.26", "4-75", "2-30", "lunch 11.20 yesterday",
 ]
 
 BAD_JSON = [

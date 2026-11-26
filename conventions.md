@@ -31,13 +31,21 @@ The rules below make the table precise where real messages need it. They were ad
 - **Vague dates.** "Sometime", "next week" and "this weekend" name no single day, so the system asks (`date`).
 - **Repeated times.** If a time occurs twice because clocks fall back, the first occurrence is used.
 
+Added on 2026-11-25 (Ananya's proposed rules, the subset implemented before the freeze; see `CHANGELOG.md`):
+
+- **Weekday phrases.** "This Friday" and "coming Friday" mean a bare weekday. "Friday next week" means "next Friday". "A week from Friday" is the bare-weekday Friday plus 7 days. Two weekdays joined by "or", "and" or "/" ("fri or sat", "sat/sun"), in any case, are two possible events (`which_event`).
+- **Offsets.** "Day after tomorrow" is two days after the reference date. "In N days" and "in N weeks" are the reference date plus N or 7N days (N in digits or "a", "one" to "seven"). The time of day comes from the message: an event with none asks `start_time`; a reminder with none is 09:00.
+- **Special times.** "Noon" is 12:00. "Around" and "about" before a time, and "ish" after it, give that time. "Half past 6", "quarter past 6" and "quarter to 7" are 6:30, 6:15 and 6:45; the AM/PM cues apply as for any time. A bare hour right after "tonight", "evening" or "night" ("tonight 7") is a PM time.
+- **Day-parts with no clock time.** An event asks `start_time`. A reminder with a morning cue is 09:00. A reminder with an afternoon, evening, night or tonight cue asks `start_time`, because 09:00 would contradict the cue.
+- **Written dates.** Numeric dates are month/day, separated by "/" or "-" (the same separator throughout), with an optional 2- or 4-digit year (a two-digit year means 20YY); "." works only with a year ("11.20.26"), because "4.75" and "11.20" are prices. A "-" or "." pair that cannot be a month and day ("4-75") is not a date. A number pair followed by am/pm, "ish" or a unit ("2-4pm", "1.5 hours") or preceded by a currency symbol ("$11.20") is not a date. "6 Nov", "6th of Nov" and "Nov. 6th" are accepted. A date that does not exist ("Nov 31", month 13) asks `invalid_time`. "The 31st" in a 30-day month is the next 31st on or after the reference date.
+
 ## Expenses
 
 An expense records money the user has already spent. Its fields are `amount`, `currency`, `description` and `date`.
 
 - **Amount** is a decimal with at most two places, written as a string ("23.50"), so no rounding can creep in. "$1,200" is 1200.00 and "$1.2k" is 1200.00.
-- **Currency** is an ISO 4217 code. "$", "dollars" and "bucks" are USD; "€" and "euros" are EUR; "£" and "pounds" are GBP; "₹", "Rs" and "rupees" are INR. A number with no currency word is in the user's home currency, USD for every item in this project. This is a default, like the 60-minute event, not a guess about the message.
-- **Date** is a calendar date with no time (`2026-11-01`). Expenses look backward: "yesterday" is the day before the reference date, and a bare weekday ("Friday") is its most recent occurrence strictly before the reference date. A message with no date means the reference date.
+- **Currency** is an ISO 4217 code. "$", "dollars" and "bucks" are USD; "€" and "euros" are EUR; "£" and "pounds" are GBP; "₹", "Rs" and "rupees" are INR; "C$" and "CA$" are CAD; "A$" and "AU$" are AUD (2026-11-25). A number with no currency word is in the user's home currency, USD for every item in this project. This is a default, like the 60-minute event, not a guess about the message.
+- **Date** is a calendar date with no time (`2026-11-01`). Expenses look backward: "yesterday" and "last night" are the day before the reference date; a bare weekday ("Friday") or "last Friday" is its most recent occurrence strictly before the reference date; a month and day with no year ("Oct 28", "10/28") or "the 28th" is the most recent such date on or before the reference date, across a year boundary if needed (this replaces the forward rule above for expenses); "N days ago" is the reference date minus N. A message with no date means the reference date.
 - **Description** names what the money was for, using only words from the message.
 - The system asks (`amount`) when the amount is missing ("paid for the cab") or two amounts are possible ("$40 or $45").
 

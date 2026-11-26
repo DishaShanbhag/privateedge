@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from calendar_schema import Clarify, Event, Expense, parse_action, to_pred  # noqa: E402
-from resolver import combine, iso, parse_amount, parse_date, parse_duration, parse_time  # noqa: E402
+from resolver import combine, iso, parse_amount, parse_date, parse_duration, parse_time, resolve_action  # noqa: E402
 
 NY = "America/New_York"
 MON = date(2026, 11, 2)       # default reference date
@@ -487,3 +487,54 @@ def test_resume_with_limit_keeps_earlier_items(tmp_path, monkeypatch):
     rc.main()
     ids = [json.loads(l)["id"] for l in open(out + "_pred.jsonl")]
     assert ids == [i["id"] for i in items[:3]]
+
+
+# ---------------------------------------------------------------- convention fixes (2026-11-25)
+
+@pytest.mark.parametrize("text,past,want", [
+    ("drinks fri or sat", False, "which_event"),          # bug: lowercase alternative was dropped
+    ("coffee wed or thurs", False, "which_event"),
+    ("sat/sun brunch", False, "which_event"),
+    ("the sun is out", False, None),                      # still not a weekday
+    ("Friday next week", False, "2026-11-13"),            # bug: was the coming Friday
+    ("a week from Friday", False, "2026-11-13"),
+    ("in 3 days", False, "2026-11-05"),
+    ("in two weeks", False, "2026-11-16"),
+    ("11-20", False, "2026-11-20"),
+    ("11.20", False, None),                               # a price: "." dates need a year
+    ("11.20.26", False, "2026-11-20"),
+    ("coffee 4.75", False, None),                         # was read as April 75 (B0 regression)
+    ("4-75", False, None),
+    ("2-4pm", False, None),                               # a time range, not 4 Feb
+    ("$11.20", False, None),
+    ("1.5 hours", False, None),
+    ("3 days ago", True, "2026-10-30"),
+])
+def test_new_date_rules(text, past, want):
+    from datetime import date
+    p = parse_date(text, date(2026, 11, 2), past)
+    got = p.value.isoformat() if p.value else p.clarify
+    assert got == want
+
+
+@pytest.mark.parametrize("text,want", [
+    ("tonight 7", "19:00"), ("this evening 8", "20:00"), ("meet 3 people tonight", None),
+    ("half past 6 dinner", "18:30"), ("quarter past 9 breakfast", "09:15"), ("quarter to 7 dinner", "18:45"),
+    ("half past 6", "ampm"), ("2-4pm", "14:00"),
+])
+def test_new_time_rules(text, want):
+    p = parse_time(text, text)
+    got = p.value.start.strftime("%H:%M") if p.value else p.clarify
+    assert got == want
+
+
+def test_cad_aud_symbols_and_evening_reminder():
+    assert parse_amount("C$20").value[1] == "CAD"        # bug: was USD
+    assert parse_amount("A$15").value[1] == "AUD"
+    assert parse_amount("$20").value[1] == "USD"
+    r = resolve_action("reminder", {"date": "tomorrow evening"}, "remind me tomorrow evening to call mom",
+                       "2026-11-02T10:00:00-05:00", "America/New_York")
+    assert r.clarify == "start_time"
+    r = resolve_action("reminder", {"date": "tomorrow"}, "remind me to buy drinks tomorrow",
+                       "2026-11-02T10:00:00-05:00", "America/New_York")
+    assert r.value["start"] == "2026-11-03T09:00:00-05:00"

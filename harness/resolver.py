@@ -30,12 +30,20 @@ _WD = "|".join(sorted(WEEKDAYS, key=len, reverse=True))
 _MO = "|".join(sorted(MONTHS, key=len, reverse=True))
 _ORD = r"(\d{1,2})(?:st|nd|rd|th)?"
 _ORDR = r"(\d{1,2})(?:st|nd|rd|th)"  # suffix required
+_NUMWORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
+_N = r"\d{1,3}|" + "|".join(sorted(_NUMWORDS, key=len, reverse=True))
+
+
+def _count(word):
+    w = word.lower()
+    return _NUMWORDS[w] if w in _NUMWORDS else int(w)
 
 # Words that fix AM/PM (conventions.md, "Date and time rules").
 PM_WORDS = re.compile(r"\b(dinner|supper|drinks|tonight|tonite|evening|afternoon|happy hour|night)\b", re.I)
 AM_WORDS = re.compile(r"\b(breakfast|brunch|morning)\b", re.I)
 LUNCH = re.compile(r"\blunch\b", re.I)
 # Phrases that name no single day: the date is missing.
+_PM_DAYPART = re.compile(r"\b(afternoon|evening|tonight|tonite|night)\b", re.I)
 VAGUE_DATE = re.compile(r"\b(sometime|some time|next week|this weekend|next weekend|later this week|soon|one of these days)\b", re.I)
 
 
@@ -100,7 +108,14 @@ _DATE_PATTERNS = [
     ("wd_dom", re.compile(rf"\b(?:this\s+|next\s+)?({_WD})\.?,?\s+(?:the\s+)?{_ORDR}\b", re.I)),
     ("month_day", re.compile(rf"\b({_MO})\.?\s+{_ORD}\b", re.I)),
     ("day_month", re.compile(rf"\b{_ORD}\s+(?:of\s+)?({_MO})\b", re.I)),
-    ("numeric", re.compile(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b")),
+    # Month/day with "/", "-" or "." (same separator throughout). Not a time range ("2-4pm"),
+    # a clock time ("11.30am"), money ("$11.20") or a decimal quantity ("1.5 hours").
+    ("numeric", re.compile(r"(?<![$€£₹\d.])\b(\d{1,2})([/.\-])(\d{1,2})(?:\2(\d{2,4}))?\b"
+                           r"(?!\s*(?:[ap]\.?m\b|ish\b|hours?\b|hrs?\b|h\b|minutes?\b|mins?\b|k\b|%)|[:\d])", re.I)),
+    ("wd_next_week", re.compile(rf"\b({_WD})\.?\s+next\s+week\b", re.I)),
+    ("week_from", re.compile(rf"\ba\s+week\s+from\s+(?:this\s+|on\s+)?({_WD})\b\.?", re.I)),
+    ("in_n", re.compile(rf"\bin\s+({_N})\s+(days?|weeks?)\b", re.I)),
+    ("ago", re.compile(rf"\b({_N})\s+days?\s+ago\b", re.I)),
     ("rel", re.compile(r"\b(day after tomorrow|today|tonight|tonite|this (?:morning|afternoon|evening)|"
                        r"tomorrow|tmrw|tmr|tomoz|2morrow|yesterday|last night)\b", re.I)),
     ("next_wd", re.compile(rf"\bnext\s+({_WD})\b\.?", re.I)),
@@ -126,9 +141,9 @@ def _resolve_match(kind, m, ref: date, past: bool):
         d = _month_day(ref, MONTHS[g[1].lower()], int(g[0]), past)
         return (d, None) if d else (None, "invalid_time")
     if kind == "numeric":  # US order: month/day
-        mo, day = int(g[0]), int(g[1])
-        if g[2]:
-            y = int(g[2]) + (2000 if len(g[2]) == 2 else 0)
+        mo, day = int(g[0]), int(g[2])
+        if g[3]:
+            y = int(g[3]) + (2000 if len(g[3]) == 2 else 0)
             try:
                 return date(y, mo, day), None
             except ValueError:
@@ -156,6 +171,15 @@ def _resolve_match(kind, m, ref: date, past: bool):
     if kind == "dom":
         d = _day_of_month(ref, int(g[0]), past)
         return (d, None) if d else (None, "invalid_time")
+    if kind == "wd_next_week":  # "Friday next week" = "next Friday"
+        return _next_week_weekday(ref, WEEKDAYS[g[0].lower()]), None
+    if kind == "week_from":  # "a week from Friday" = the bare-weekday Friday + 7 days
+        return _next_weekday(ref, WEEKDAYS[g[0].lower()]) + timedelta(days=7), None
+    if kind == "in_n":  # "in 3 days", "in two weeks"
+        n = _count(g[0])
+        return ref + timedelta(days=n * (7 if g[1].lower().startswith("week") else 1)), None
+    if kind == "ago":  # "3 days ago"
+        return ref - timedelta(days=_count(g[0])), None
     raise ValueError(kind)
 
 
@@ -166,6 +190,11 @@ def _find_dates(text):
         for m in rx.finditer(text):
             if kind == "wd" and m.group(1).lower() in ("sat", "sun", "wed", "mar", "may") and not _looks_like_day(text, m):
                 continue
+            if kind == "numeric" and m.group(2) in ".-":
+                # "4.75" and "11.20" are prices, not dates: a "." date needs a year ("11.20.26"),
+                # and a "-" or "." pair must be a possible month and day ("4-75" is not a date).
+                if (m.group(2) == "." and not m.group(4)) or not (1 <= int(m.group(1)) <= 12 and 1 <= int(m.group(3)) <= 31):
+                    continue
             found.append((m.start(), m.end(), kind, m))
     found.sort(key=lambda f: (-(f[1] - f[0]), f[0]))
     chosen = []
@@ -182,8 +211,11 @@ def _looks_like_day(text, m):
         return True
     after = text[m.end():m.end() + 12].lower()
     before = text[max(0, m.start() - 4):m.start()].lower()
+    # one of two alternatives: "fri or sat", "sat/sun" (the other side must be a weekday too)
+    alt_after = re.match(rf"\s*(?:or|and|/|,)\s*(?:{_WD})\b", text[m.end():m.end() + 16], re.I)
+    alt_before = re.search(rf"\b(?:{_WD})\.?\s*(?:or|and|/|,)\s*$", text[max(0, m.start() - 16):m.start()], re.I)
     return bool(re.match(r"\s*(at|@|\d|morning|night|afternoon|evening)", after)) or before.strip().endswith("on") \
-        or m.group(0)[:1].isupper()
+        or m.group(0)[:1].isupper() or bool(alt_after) or bool(alt_before)
 
 
 def parse_date(text, ref: date, past=False) -> Parse:
@@ -216,6 +248,10 @@ _TIME = re.compile(
     r"(?:\s*(?:-|–|to|till|until)\s*(?P<h2>\d{1,2})(?::(?P<m2>\d{2}))?\s*(?P<ap2>\s*[ap]\.?m\b\.?)?)?(?![\d/])",
     re.I)
 _NOON = re.compile(r"\b(noon|midday|midnight)\b", re.I)
+_PM_DAYPART_BEFORE = re.compile(r"\b(?:tonight|tonite|evening|night)\s*$", re.I)
+# "half past 6", "quarter past 6", "quarter to 7" (AM/PM from an explicit marker or the cue words)
+_CLOCKWORDS = re.compile(r"\b(?:(?P<part>half|quarter)\s+past|(?P<to>quarter)\s+to)\s+(?P<h>\d{1,2})\b"
+                         r"(?P<ap>\s*[ap]\.?m\b\.?)?", re.I)
 
 
 def _ampm(ap):
@@ -245,6 +281,9 @@ def _time_candidates(text):
     for m in _TIME.finditer(text):
         h = int(m.group("h"))
         has_marker = m.group("pre") or m.group("m") or m.group("ap") or m.group("h2") or m.group("ish")
+        # a bare hour right after a PM day-part word is a time: "tonight 7", "this evening 8"
+        if not has_marker and h <= 12 and _PM_DAYPART_BEFORE.search(text[max(0, m.start() - 16):m.start()]):
+            has_marker = True
         if not has_marker or h > 24:
             continue  # a bare number ("3 people", "$20") is not a time
         # a numeric date ("11/20") or money ("$20") is not a time
@@ -291,6 +330,18 @@ def parse_time(text, message) -> Parse:
         if h > 12:
             continue
         vals.append((m, time(_apply(h, ap), mi), h2, ap2 or ap))
+    for m in _CLOCKWORDS.finditer(text):
+        h = int(m.group("h"))
+        if not 1 <= h <= 12:
+            continue
+        if m.group("to"):
+            hh, mi = h - 1 or 12, 45   # "quarter to 7" is 6:45; AM/PM applies to that hour
+        else:
+            hh, mi = h, 30 if m.group("part").lower() == "half" else 15
+        ap = _ampm(m.group("ap")) or _cue(message, hh)
+        if ap is None:
+            return Parse(clarify="ampm", matched=m.group(0).strip())
+        vals.append((m, time(_apply(hh, ap), mi), None, ap))
     if noon and not vals:
         return Parse(value=TimeValue(time(0 if noon.group(1).lower() == "midnight" else 12, 0)), matched=noon.group(0))
     if not vals:
@@ -349,7 +400,7 @@ def iso(dt: datetime) -> str:
 
 # ---------------------------------------------------------------- amounts
 
-_CUR_SYM = {"$": "USD", "€": "EUR", "£": "GBP", "₹": "INR"}
+_CUR_SYM = {"$": "USD", "€": "EUR", "£": "GBP", "₹": "INR", "C$": "CAD", "CA$": "CAD", "A$": "AUD", "AU$": "AUD"}
 _CUR_WORD = {
     "usd": "USD", "dollars": "USD", "dollar": "USD", "bucks": "USD", "buck": "USD",
     "eur": "EUR", "euros": "EUR", "euro": "EUR", "gbp": "GBP", "pounds": "GBP", "quid": "GBP",
@@ -357,7 +408,7 @@ _CUR_WORD = {
 }
 _NUM = r"(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(k\b)?"
 _AMOUNT = re.compile(
-    rf"(?P<sym>[$€£₹])\s*{_NUM}|{_NUM}\s*(?P<word>{'|'.join(_CUR_WORD)})\b|(?P<rs>rs\.?)\s*{_NUM}", re.I)
+    rf"(?P<sym>CA\$|AU\$|C\$|A\$|[$€£₹])\s*{_NUM}|{_NUM}\s*(?P<word>{'|'.join(_CUR_WORD)})\b|(?P<rs>rs\.?)\s*{_NUM}", re.I)
 
 
 def _to_decimal(whole, frac, k):
@@ -377,7 +428,7 @@ def parse_amount(text, default_currency="USD", allow_bare=False) -> Parse:
     for m in _AMOUNT.finditer(text):
         g = m.groups()
         if m.group("sym"):
-            v, cur = _to_decimal(g[1], g[2], g[3]), _CUR_SYM[m.group("sym")]
+            v, cur = _to_decimal(g[1], g[2], g[3]), _CUR_SYM[m.group("sym").upper()]
         elif m.group("word"):
             v, cur = _to_decimal(g[4], g[5], g[6]), _CUR_WORD[m.group("word").lower()]
         else:
@@ -435,6 +486,8 @@ def resolve_action(kind, spans, message, reference_time, tz) -> Parse:
     if t.value is None:
         if kind == "event":
             return Parse(clarify="start_time")
+        if _PM_DAYPART.search(message):
+            return Parse(clarify="start_time")  # 09:00 would contradict "tonight", "this evening"...
         t = Parse(value=TimeValue(time(9, 0)))  # reminder with no time
     c = combine(d.value, t.value.start, tz)
     if c.clarify:
