@@ -30,10 +30,14 @@ private func alt(_ words: [String]) -> String {
 private let WD = alt(Array(WEEKDAYS.keys)), MO = alt(Array(MONTHS.keys))
 private let ORD = #"(\d{1,2})(?:st|nd|rd|th)?"#
 private let ORDR = #"(\d{1,2})(?:st|nd|rd|th)"#
+private let NUMWORDS: [String: Int] = ["a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7]
+private let NW = #"\d{1,3}|"# + NUMWORDS.keys.sorted { $0.count != $1.count ? $0.count > $1.count : $0 < $1 }.joined(separator: "|")
+private func count(_ w: String) -> Int { NUMWORDS[w.pyLower] ?? pyInt(w) }
 
 let PM_WORDS = RX(#"\b(dinner|supper|drinks|tonight|tonite|evening|afternoon|happy hour|night)\b"#, ci: true)
 let AM_WORDS = RX(#"\b(breakfast|brunch|morning)\b"#, ci: true)
 let LUNCH = RX(#"\blunch\b"#, ci: true)
+let PM_DAYPART = RX(#"\b(afternoon|evening|tonight|tonite|night)\b"#, ci: true)
 let VAGUE_DATE = RX(#"\b(sometime|some time|next week|this weekend|next weekend|later this week|soon|one of these days)\b"#, ci: true)
 
 /// Python int() on a run of (possibly non-ASCII) decimal digits.
@@ -83,7 +87,14 @@ private let DATE_PATTERNS: [(String, RX)] = [
     ("wd_dom", RX(#"\b(?:this\s+|next\s+)?(\#(WD))\.?,?\s+(?:the\s+)?\#(ORDR)\b"#, ci: true)),
     ("month_day", RX(#"\b(\#(MO))\.?\s+\#(ORD)\b"#, ci: true)),
     ("day_month", RX(#"\b\#(ORD)\s+(?:of\s+)?(\#(MO))\b"#, ci: true)),
-    ("numeric", RX(#"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b"#)),
+    // Month/day with "/", "-" or "." (same separator throughout); not a time range, clock time,
+    // money or decimal quantity.
+    ("numeric", RX(#"(?<![\$€£₹\d.])\b(\d{1,2})([/.\-])(\d{1,2})(?:\2(\d{2,4}))?\b"#
+                   + #"(?!\s*(?:[ap]\.?m\b|ish\b|hours?\b|hrs?\b|h\b|minutes?\b|mins?\b|k\b|%)|[:\d])"#, ci: true)),
+    ("wd_next_week", RX(#"\b(\#(WD))\.?\s+next\s+week\b"#, ci: true)),
+    ("week_from", RX(#"\ba\s+week\s+from\s+(?:this\s+|on\s+)?(\#(WD))\b\.?"#, ci: true)),
+    ("in_n", RX(#"\bin\s+(\#(NW))\s+(days?|weeks?)\b"#, ci: true)),
+    ("ago", RX(#"\b(\#(NW))\s+days?\s+ago\b"#, ci: true)),
     ("rel", RX(#"\b(day after tomorrow|today|tonight|tonite|this (?:morning|afternoon|evening)|tomorrow|tmrw|tmr|tomoz|2morrow|yesterday|last night)\b"#, ci: true)),
     ("next_wd", RX(#"\bnext\s+(\#(WD))\b\.?"#, ci: true)),
     ("last_wd", RX(#"\blast\s+(\#(WD))\b\.?"#, ci: true)),
@@ -104,8 +115,8 @@ private func resolveMatch(_ kind: String, _ m: RM, _ ref: Day, _ past: Bool) -> 
         let d = monthDay(ref, MONTHS[m.g(2)!.pyLower]!, pyInt(m.g(1)!), past: past)
         return d != nil ? (d, nil) : (nil, "invalid_time")
     case "numeric":  // US order: month/day
-        let mo = pyInt(m.g(1)!), day = pyInt(m.g(2)!)
-        if let ys = m.g(3) {
+        let mo = pyInt(m.g(1)!), day = pyInt(m.g(3)!)
+        if let ys = m.g(4) {
             let y = pyInt(ys) + (ys.count == 2 ? 2000 : 0)
             guard let d = Day(y, mo, day) else { return (nil, "invalid_time") }
             return (d, nil)
@@ -129,6 +140,15 @@ private func resolveMatch(_ kind: String, _ m: RM, _ ref: Day, _ past: Bool) -> 
     case "dom":
         let d = dayOfMonth(ref, pyInt(m.g(1)!), past: past)
         return d != nil ? (d, nil) : (nil, "invalid_time")
+    case "wd_next_week":  // "Friday next week" = "next Friday"
+        return (nextWeekWeekday(ref, WEEKDAYS[m.g(1)!.pyLower]!), nil)
+    case "week_from":  // "a week from Friday" = the bare-weekday Friday + 7 days
+        return (nextWeekday(ref, WEEKDAYS[m.g(1)!.pyLower]!).adding(7), nil)
+    case "in_n":
+        let n = count(m.g(1)!)
+        return (ref.adding(n * (m.g(2)!.pyLower.hasPrefix("week") ? 7 : 1)), nil)
+    case "ago":
+        return (ref.adding(-count(m.g(1)!)), nil)
     default:
         fatalError(kind)
     }
@@ -144,6 +164,12 @@ private func findDates(_ text: String) -> [Hit] {
             if kind == "wd", ["sat", "sun", "wed", "mar", "may"].contains(m.g(1)!.pyLower), !looksLikeDay(text, m) {
                 continue
             }
+            if kind == "numeric", let sep = m.g(2), sep == "." || sep == "-" {
+                // "4.75" and "11.20" are prices: a "." date needs a year, and a "-"/"." pair must be a
+                // possible month and day.
+                let mo = pyInt(m.g(1)!), d = pyInt(m.g(3)!)
+                if (sep == "." && m.g(4) == nil) || !((1...12).contains(mo) && (1...31).contains(d)) { continue }
+            }
             found.append(Hit(s: m.start, e: m.end, kind: kind, m: m, order: found.count))
         }
     }
@@ -158,6 +184,8 @@ private func findDates(_ text: String) -> [Hit] {
 }
 
 private let DAY_AFTER = RX(#"^\s*(at|@|\d|morning|night|afternoon|evening)"#)
+private let ALT_AFTER = RX(#"^\s*(?:or|and|/|,)\s*(?:\#(WD))\b"#, ci: true)
+private let ALT_BEFORE = RX(#"\b(?:\#(WD))\.?\s*(?:or|and|/|,)\s*$"#, ci: true)
 
 /// "sun" and "sat" are also ordinary words; accept them only next to a time or "on",
 /// capitalised, or when the text is the word alone (an annotated or model-returned span).
@@ -165,7 +193,11 @@ private func looksLikeDay(_ text: String, _ m: RM) -> Bool {
     if text.pyStrip(" .,!?").pyLower == m.text.pyStrip(" .").pyLower { return true }
     let after = text.sl(m.end, m.end + 12).pyLower
     let before = text.sl(max(0, m.start - 4), m.start).pyLower
+    // one of two alternatives: "fri or sat", "sat/sun" (the other side must be a weekday too)
+    let altAfter = ALT_AFTER.first(text.sl(m.end, m.end + 16)) != nil
+    let altBefore = ALT_BEFORE.first(text.sl(max(0, m.start - 16), m.start)) != nil
     return DAY_AFTER.first(after) != nil || before.pyStrip().hasSuffix("on") || (m.text.first?.isUppercase ?? false)
+        || altAfter || altBefore
 }
 
 /// Resolve the date mentioned in `text`. Two different dates -> clarify(which_event); a vague date
@@ -194,6 +226,8 @@ private let TIME = RX(
     + #"(?:\s*(?:-|–|to|till|until)\s*(?<h2>\d{1,2})(?::(?<m2>\d{2}))?\s*(?<ap2>\s*[ap]\.?m\b\.?)?)?(?![\d/])"#,
     ci: true)
 private let NOON = RX(#"\b(noon|midday|midnight)\b"#, ci: true)
+private let PM_DAYPART_BEFORE = RX(#"\b(?:tonight|tonite|evening|night)\s*$"#, ci: true)
+private let CLOCKWORDS = RX(#"\b(?:(?<part>half|quarter)\s+past|(?<to>quarter)\s+to)\s+(?<h>\d{1,2})\b(?<ap>\s*[ap]\.?m\b\.?)?"#, ci: true)
 
 private func ampm(_ ap: String?) -> String? {
     guard let ap, !ap.isEmpty else { return nil }
@@ -218,7 +252,9 @@ private func nonEmpty(_ s: String?) -> Bool { !(s ?? "").isEmpty }
 private func timeCandidates(_ text: String) -> [RM] {
     TIME.all(text).filter { m in
         let h = pyInt(m.g("h")!)
-        let marker = nonEmpty(m.g("pre")) || nonEmpty(m.g("m")) || nonEmpty(m.g("ap")) || nonEmpty(m.g("h2")) || nonEmpty(m.g("ish"))
+        var marker = nonEmpty(m.g("pre")) || nonEmpty(m.g("m")) || nonEmpty(m.g("ap")) || nonEmpty(m.g("h2")) || nonEmpty(m.g("ish"))
+        // a bare hour right after a PM day-part word is a time: "tonight 7"
+        if !marker, h <= 12, PM_DAYPART_BEFORE.first(text.sl(max(0, m.start - 16), m.start)) != nil { marker = true }
         if !marker || h > 24 { return false }  // a bare number ("3 people", "$20") is not a time
         // a numeric date ("11/20") or money ("$20") is not a time
         if text.sl(m.end, m.end + 1) == "/" || text.sl(max(0, m.start - 1), m.start) == "/" { return false }
@@ -259,6 +295,15 @@ public func parseTime(_ text: String?, _ message: String) -> Parse<TimeValue> {
         }
         if h > 12 { continue }
         vals.append((m, HM(h: apply(h, ap), m: mi), h2, ap2 ?? ap))
+    }
+    for m in CLOCKWORDS.all(text) {
+        let h = pyInt(m.g("h")!)
+        guard (1...12).contains(h) else { continue }
+        let hh: Int, mi: Int
+        if m.g("to") != nil { hh = h - 1 == 0 ? 12 : h - 1; mi = 45 }  // "quarter to 7" is 6:45
+        else { hh = h; mi = m.g("part")!.pyLower == "half" ? 30 : 15 }
+        guard let ap = ampm(m.g("ap")) ?? cue(message, hh) else { return Parse(clarify: "ampm", matched: m.text.pyStrip()) }
+        vals.append((m, HM(h: apply(hh, ap), m: mi), nil, ap))
     }
     if let noon, vals.isEmpty {
         let midnight = noon.g(1)!.pyLower == "midnight"
@@ -307,7 +352,7 @@ public struct Money: Hashable, Sendable {
     public let currency: String
 }
 
-private let CUR_SYM: [String: String] = ["$": "USD", "€": "EUR", "£": "GBP", "₹": "INR"]
+private let CUR_SYM: [String: String] = ["$": "USD", "€": "EUR", "£": "GBP", "₹": "INR", "C$": "CAD", "CA$": "CAD", "A$": "AUD", "AU$": "AUD"]
 private let CUR_WORDS: [(String, String)] = [  // order matters: it is the regex alternation order
     ("usd", "USD"), ("dollars", "USD"), ("dollar", "USD"), ("bucks", "USD"), ("buck", "USD"),
     ("eur", "EUR"), ("euros", "EUR"), ("euro", "EUR"), ("gbp", "GBP"), ("pounds", "GBP"), ("quid", "GBP"),
@@ -317,7 +362,7 @@ private let CUR_WORD = Dictionary(uniqueKeysWithValues: CUR_WORDS)
 private let NUM = #"(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(k\b)?"#
 // Groups: 1 sym, 2-4 number, 5-7 number, 8 word, 9 rs, 10-12 number (as in Python).
 private let AMOUNT = RX(
-    #"(?<sym>[\$€£₹])\s*\#(NUM)|\#(NUM)\s*(?<word>\#(CUR_WORDS.map(\.0).joined(separator: "|")))\b|(?<rs>rs\.?)\s*\#(NUM)"#,
+    #"(?<sym>CA\$|AU\$|C\$|A\$|[\$€£₹])\s*\#(NUM)|\#(NUM)\s*(?<word>\#(CUR_WORDS.map(\.0).joined(separator: "|")))\b|(?<rs>rs\.?)\s*\#(NUM)"#,
     ci: true)
 private let BARE = RX(#"(?<![\d/:.])\#(NUM)(?![\d/:]|\s*(?:am|pm|st|nd|rd|th|min|hour|hr|people|ppl)\b)"#, ci: true)
 
@@ -340,7 +385,7 @@ public func parseAmount(_ text: String?, defaultCurrency: String = "USD", allowB
     for m in AMOUNT.all(text) {
         let v: String, cur: String
         if let sym = m.g("sym") {
-            v = toDecimal(m.g(2)!, m.g(3), m.g(4)); cur = CUR_SYM[sym]!
+            v = toDecimal(m.g(2)!, m.g(3), m.g(4)); cur = CUR_SYM[sym.uppercased()]!
         } else if let word = m.g("word") {
             v = toDecimal(m.g(5)!, m.g(6), m.g(7)); cur = CUR_WORD[word.pyLower]!
         } else {
@@ -393,6 +438,7 @@ public func resolveAction(_ kind: String, _ spans: [String: String], _ message: 
     var tv = t.value
     if tv == nil {
         if kind == "event" { return Parse(clarify: "start_time") }
+        if PM_DAYPART.first(message) != nil { return Parse(clarify: "start_time") }  // 09:00 would contradict "tonight"
         tv = TimeValue(start: HM(h: 9, m: 0), durationMin: nil)  // reminder with no time
     }
     let c = combine(day, tv!.start, tz)

@@ -26,7 +26,7 @@
 {"id": "cal-026", "action": "reminder", "schema_valid": true, "start": "2027-01-01T12:00:00-05:00", "title": "call grandma"}
 {"id": "cal-027", "action": "reminder", "schema_valid": true, "start": "2027-03-14T09:00:00-04:00", "title": "water the plants"}
 {"id": "cal-028", "action": "reminder", "schema_valid": true, "start": "2026-11-02T18:00:00-05:00", "title": "text Jo back tonight"}
-{"id": "cal-029", "action": "clarify", "schema_valid": true, "fields": ["start_time"]}
+{"id": "cal-029", "action": "reminder", "schema_valid": true, "start": "2026-11-05T19:00:00-05:00", "title": "call the bank"}
 {"id": "cal-030", "action": "clarify", "schema_valid": true, "fields": ["date"]}
 {"id": "cal-031", "action": "clarify", "schema_valid": true, "fields": ["date", "start_time"]}
 {"id": "cal-032", "action": "clarify", "schema_valid": true, "fields": ["date", "start_time"]}
