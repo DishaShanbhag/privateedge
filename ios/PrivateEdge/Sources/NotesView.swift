@@ -25,9 +25,12 @@ struct NotesView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Ask about your notes…", text: $question, axis: .vertical)
-                        .lineLimit(1...4)
-                        .onSubmit(run)
+                    HStack(alignment: .top) {
+                        TextField("Ask about your notes…", text: $question, axis: .vertical)
+                            .lineLimit(1...4)
+                            .onSubmit(run)
+                        MicButton(text: $question)
+                    }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
                             ForEach(examples, id: \.self) { ex in
