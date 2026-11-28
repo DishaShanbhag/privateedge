@@ -1,0 +1,5 @@
+# Ablation (2026-11-27): C1 with the v1 calendar prompt (+ "Which action" rules). Rejected on dev; see CHANGELOG.
+inherits: C1.yaml
+prompts:
+  notes: prompts/notes_v0.txt
+  calendar: prompts/calendar_v1.txt
