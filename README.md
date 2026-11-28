@@ -60,6 +60,14 @@ python eval/score_calendar.py --gold data/dev/calendar_dev.jsonl --pred results/
 # Paired-bootstrap 95% CI for the cloud-minus-local gap
 python eval/bootstrap_gap.py --local results/C3_scores.csv --cloud results/cloud_scores.csv
 
+# Blind 0-2 grading of notes answers: export shuffled sheets (no system names), then import the
+# filled sheets -> Cohen's kappa, disagreements to adjudicate, one id,score file per system
+python eval/notes_grading.py export --items <notes items> --corpus <notes corpus> \
+    --run C2=<C2 pred.jsonl> --run cloud=<cloud pred.jsonl> --out-dir results/raw/grading
+python eval/notes_grading.py import --dir results/raw/grading --first g1.csv --second g2.csv [--adjudicated adj.csv]
+python eval/bootstrap_gap.py --local results/raw/grading/C2_notes_scores.csv \
+    --cloud results/raw/grading/cloud_notes_scores.csv --max-score 2
+
 # Run tests
 python -m pytest eval/tests
 ```
