@@ -49,6 +49,8 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         NSCalendarsWriteOnlyAccessUsageDescription: Add the event you confirmed to your calendar.
         NSRemindersFullAccessUsageDescription: Add the reminder you confirmed to Reminders.
+        NSMicrophoneUsageDescription: Speak a message or question instead of typing. Audio stays on this phone.
+        NSSpeechRecognitionUsageDescription: Turn your speech into text on this phone. PrivateEdge only uses on-device recognition; audio is never sent to a server.
     entitlements:
       path: Sources/PrivateEdge.entitlements
       properties:

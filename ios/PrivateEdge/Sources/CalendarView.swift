@@ -20,10 +20,13 @@ struct CalendarView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Type a message…", text: $message, axis: .vertical)
-                        .lineLimit(1...4)
-                        .submitLabel(.go)
-                        .onSubmit(run)
+                    HStack(alignment: .top) {
+                        TextField("Type a message…", text: $message, axis: .vertical)
+                            .lineLimit(1...4)
+                            .submitLabel(.go)
+                            .onSubmit(run)
+                        MicButton(text: $message)
+                    }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
                             ForEach(examples, id: \.self) { ex in
