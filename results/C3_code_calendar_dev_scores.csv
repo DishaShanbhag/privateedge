@@ -5,12 +5,12 @@ cal-003,1,ok,1
 cal-004,1,ok,1
 cal-005,1,ok,1
 cal-006,1,ok,1
-cal-007,0,unneeded_clarify,1
-cal-008,0,unneeded_clarify,1
-cal-009,0,unneeded_clarify,1
+cal-007,1,ok,1
+cal-008,1,ok,1
+cal-009,1,ok,1
 cal-010,1,ok,1
 cal-011,1,ok,1
-cal-012,0,unneeded_clarify,1
+cal-012,1,ok,1
 cal-013,1,ok,1
 cal-014,1,ok,1
 cal-015,1,ok,1
@@ -18,7 +18,7 @@ cal-016,1,ok,1
 cal-017,1,ok,1
 cal-018,0,wrong_action,1
 cal-019,1,ok,1
-cal-020,0,unneeded_clarify,1
+cal-020,1,ok,1
 cal-021,0,unneeded_clarify,1
 cal-022,1,ok,1
 cal-023,1,ok,1

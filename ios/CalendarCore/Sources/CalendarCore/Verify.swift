@@ -206,6 +206,9 @@ func spansUsed(_ action: Action, _ msg: String) -> [String: String] {
         let joined = [used["date"], used["time"]].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         used["date"] = joined.isEmpty ? nil : joined
         used["time"] = joined.isEmpty ? nil : joined
+        // The kept words name no date (the model copied the prompt's "Now:" line, say): read the
+        // date and time from the whole message.
+        if !mentionsDate(joined) { used["date"] = msg; used["time"] = msg }
     }
     return used
 }
