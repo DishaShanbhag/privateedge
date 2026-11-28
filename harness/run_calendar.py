@@ -14,6 +14,7 @@ output tokens, decode speed, and for the cloud the returned model version, attem
 Every call has a timeout and a max-token cap; local runs use temperature 0.
 """
 import argparse
+import hashlib
 import os
 import time
 from datetime import datetime
@@ -76,7 +77,8 @@ class LocalModel:
         with the template's "Today Date" set to it (the GGUF template would stamp the machine's date)."""
         t0 = time.perf_counter()
         t_first, pieces, timed_out, finish = None, [], False, None
-        prompt_tokens = tokenize_prompt(self.llm, render_llama32(system, user, ref))
+        prompt = render_llama32(system, user, ref)
+        prompt_tokens = tokenize_prompt(self.llm, prompt)
         stream = self.llm.create_completion(prompt=prompt_tokens, temperature=self.temperature,
                                             max_tokens=self.max_tokens, grammar=self.grammar, stream=True)
         for chunk in stream:
@@ -102,6 +104,7 @@ class LocalModel:
             "decode_tok_s": round((n_out - 1) / decode_s, 1) if decode_s > 0 and n_out > 1 else None,
             "timed_out": timed_out, "hit_max_tokens": finish == "length", "finish_reason": finish,
             "model_version": self.name, "cost_usd": 0.0,
+            "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),  # phone-vs-Mac prompt check
         }
 
 

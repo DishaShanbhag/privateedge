@@ -55,6 +55,7 @@ public struct Generation {
     public let firstTokenMs: Double?
     public let totalMs: Double
     public let decodeTokS: Double?
+    public var cachedTokens: Int = 0   // prompt tokens reused from the previous request (not re-read)
 }
 
 /// One text-generation context (4K tokens). The KV cache is cleared before every request.
@@ -62,6 +63,11 @@ public final class LlamaSession {
     let model: LlamaModel
     let ctx: OpaquePointer
     let nBatch: Int
+    /// Keep the longest common prompt prefix in the KV cache between requests, as the Mac harness
+    /// (llama-cpp-python) does. The system prompt and template header are identical for every
+    /// request, so they are read once. Outputs are unchanged; only time to first token drops.
+    public var reusePrefix = true
+    private var cached: [llama_token] = []   // tokens currently in the KV cache
 
     public init(model: LlamaModel, contextTokens: Int = 4096, batch: Int = 512) throws {
         var cp = llama_context_default_params()
@@ -80,7 +86,15 @@ public final class LlamaSession {
 
     /// Greedy decoding, optionally constrained by a GBNF grammar (root rule "root").
     public func generate(promptTokens: [llama_token], grammar: String?, maxTokens: Int) throws -> Generation {
-        llama_memory_clear(llama_get_memory(ctx), true)
+        // Reuse the shared prefix (at least the last prompt token is always evaluated).
+        var keep = 0
+        if reusePrefix {
+            keep = zip(cached, promptTokens.dropLast()).prefix(while: { $0 == $1 }).count
+            _ = llama_memory_seq_rm(llama_get_memory(ctx), -1, Int32(keep), -1)
+        } else {
+            llama_memory_clear(llama_get_memory(ctx), true)
+        }
+        cached = Array(cached.prefix(keep))
         guard let chain = llama_sampler_chain_init(llama_sampler_chain_default_params()) else {
             throw CoreError.model("sampler")
         }
@@ -93,13 +107,14 @@ public final class LlamaSession {
 
         let t0 = DispatchTime.now().uptimeNanoseconds
         var tokens = promptTokens
-        var i = 0
+        var i = keep
         while i < tokens.count {
             let n = min(nBatch, tokens.count - i)
             let rc = tokens.withUnsafeMutableBufferPointer { buf in
                 llama_decode(ctx, llama_batch_get_one(buf.baseAddress! + i, Int32(n)))
             }
-            guard rc == 0 else { throw CoreError.decode("prompt decode returned \(rc)") }
+            guard rc == 0 else { cached = []; throw CoreError.decode("prompt decode returned \(rc)") }
+            cached += tokens[i..<(i + n)]
             i += n
         }
         var bytes: [UInt8] = []
@@ -114,7 +129,8 @@ public final class LlamaSession {
             bytes += p
             if generated == maxTokens { break }  // the last sampled token is never evaluated
             let rc = llama_decode(ctx, llama_batch_get_one(&tok, 1))
-            guard rc == 0 else { throw CoreError.decode("token decode returned \(rc)") }
+            guard rc == 0 else { cached = []; throw CoreError.decode("token decode returned \(rc)") }
+            cached.append(tok)
         }
         let tEnd = DispatchTime.now().uptimeNanoseconds
         let text = String(decoding: bytes, as: UTF8.self)
@@ -124,7 +140,8 @@ public final class LlamaSession {
             text: text, promptTokens: promptTokens.count, genTokens: nTok,
             firstTokenMs: tFirst.map { (Double($0 - t0) / 1e6 * 10).rounded() / 10 },
             totalMs: (Double(tEnd - t0) / 1e6 * 10).rounded() / 10,
-            decodeTokS: decodeS > 0 && nTok > 1 ? (Double(nTok - 1) / decodeS * 10).rounded() / 10 : nil)
+            decodeTokS: decodeS > 0 && nTok > 1 ? (Double(nTok - 1) / decodeS * 10).rounded() / 10 : nil,
+            cachedTokens: keep)
     }
 }
 
