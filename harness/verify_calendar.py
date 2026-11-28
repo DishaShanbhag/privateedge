@@ -11,6 +11,14 @@ Checks (each recorded in the verdict, so its value can be measured on its own):
   nsdd            (optional, verifier.calendar_crosscheck: nsdatadetector) Apple NSDataDetector
                   finds date text overlapping the date span
 
+Value source (verifier.value_source):
+  model     (C3 as proposed) the model's date, time, duration and amount are checked against the
+            values the conventions give for its spans; a mismatch triggers recovery
+  code      (C3 + code values) the model only chooses the action, the title and the source spans;
+            the values are computed from those spans by the conventions code (resolver.py), so the
+            model's own date arithmetic is never used. The title check and the NSDataDetector check
+            still apply. See recompute().
+
 Recovery when a check fails (verifier.recovery):
   clarify   (C3 as proposed) return clarify(field), naming the field that failed
   b0        deterministic fallback: return B0's action for the message
@@ -102,14 +110,81 @@ def check(item, action, crosscheck=None, span_policy="drop_and_merge"):
     return {"ok": not failed, "failed": failed, "clarify_field": field, "details": details}
 
 
+def _spans_used(action, msg):
+    """drop_and_merge: spans not in the message are ignored; date and time are read together."""
+    spans = _spans(action)
+    used = {k: (s if s is not None and s.lower() in msg.lower() else None) for k, s in spans.items()}
+    if action.action in ("event", "reminder"):
+        joined = " ".join(s for s in (used.get("date"), used.get("time")) if s) or None
+        used = {**used, "date": joined, "time": joined}
+    return used
+
+
+def recompute(item, action, crosscheck=None):
+    """C3 + code values: keep the model's action, title and spans; compute every value from the spans.
+    -> (final action, verdict). The verdict lists the fields where code replaced the model's value."""
+    from datetime import date as _date, datetime
+    from decimal import Decimal
+
+    msg = item["message"]
+    if not isinstance(action, (Event, Reminder, Expense)):
+        return action, {"ok": True, "failed": [], "clarify_field": None, "details": {}, "replaced": []}
+    kind = action.action
+    r = resolve_action(kind, _spans_used(action, msg), msg, item["reference_time"], item["tz"])
+    verdict = {"ok": True, "failed": [], "clarify_field": None, "details": {}, "replaced": []}
+
+    def ask(name, fld, why):
+        verdict.update(ok=False, clarify_field=verdict["clarify_field"] or fld)
+        verdict["failed"].append(name)
+        verdict["details"][name] = why
+
+    title = action.description if kind == "expense" else action.title
+    words = unsupported_words(title, msg)
+    if words:
+        ask("title", "conflict", f"not in message: {words}")
+    if r.clarify:
+        ask("resolve", r.clarify, f"conventions say clarify({r.clarify})")
+    if crosscheck == "nsdatadetector" and kind in ("event", "reminder"):
+        nd = check(item, action, crosscheck, "drop_and_merge")
+        if "nsdd" in nd["failed"]:
+            ask("nsdd", "date", nd["details"]["nsdd"])
+    if not verdict["ok"]:
+        return Clarify(action="clarify", fields=[verdict["clarify_field"]]), verdict
+
+    v = r.value
+    if kind == "expense":
+        new = Expense(action="expense", amount=Decimal(v["amount"]), currency=v["currency"],
+                      description=action.description, date=_date.fromisoformat(v["date"]), spans=action.spans)
+        if v["amount"] != f"{action.amount:.2f}" or v["currency"] != action.currency:
+            verdict["replaced"].append("amount")
+        if v["date"] != action.date.isoformat():
+            verdict["replaced"].append("date")
+    else:
+        start = datetime.fromisoformat(v["start"])
+        if not same_time(v["start"], action.start.isoformat()):
+            verdict["replaced"].append("start")
+        if kind == "event":
+            new = Event(action="event", title=action.title, start=start, duration_min=v["duration_min"], spans=action.spans)
+            if v["duration_min"] != action.duration_min:
+                verdict["replaced"].append("duration")
+        else:
+            new = Reminder(action="reminder", title=action.title, start=start, spans=action.spans)
+    return new, verdict
+
+
 def make_verifier(cfg):
     """-> fn(item, action) -> (final action, verdict). Used by run_calendar.py."""
     vcfg = cfg.get("verifier") or {}
     crosscheck = vcfg.get("calendar_crosscheck")
     recovery = vcfg.get("recovery", "clarify")
     span_policy = vcfg.get("span_policy", "drop_and_merge")
+    value_source = vcfg.get("value_source", "model")
 
     def verify(item, action):
+        if value_source == "code":
+            final, verdict = recompute(item, action, crosscheck)
+            verdict["recovery"] = None if verdict["ok"] else "clarify"
+            return final, verdict
         verdict = check(item, action, crosscheck, span_policy)
         verdict["recovery"] = None
         if verdict["ok"]:
@@ -126,6 +201,7 @@ def make_verifier(cfg):
         verdict["recovery"] = "clarify"
         return Clarify(action="clarify", fields=[verdict["clarify_field"]]), verdict
 
-    verify.recovery = recovery
+    verify.recovery = recovery if value_source == "model" else "clarify"
     verify.span_policy = span_policy
+    verify.value_source = value_source
     return verify
