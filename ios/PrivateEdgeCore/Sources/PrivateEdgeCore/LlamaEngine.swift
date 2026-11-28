@@ -67,6 +67,10 @@ public final class LlamaSession {
     /// (llama-cpp-python) does. The system prompt and template header are identical for every
     /// request, so they are read once. Outputs are unchanged; only time to first token drops.
     public var reusePrefix = true
+    /// Lazy grammar (as llama.cpp's common sampler): check only the greedy token against the
+    /// grammar, and mask the whole vocabulary only when that token is not allowed. Same output as
+    /// grammar-then-greedy (60/60 identical on calendar dev, Mac), 1.24x faster decoding on the Mac.
+    public var lazyGrammar = true
     private var cached: [llama_token] = []   // tokens currently in the KV cache
 
     public init(model: LlamaModel, contextTokens: Int = 4096, batch: Int = 512) throws {
@@ -99,11 +103,40 @@ public final class LlamaSession {
             throw CoreError.model("sampler")
         }
         defer { llama_sampler_free(chain) }
+        var gsampler: UnsafeMutablePointer<llama_sampler>? = nil
         if let g = grammar {
             guard let gs = llama_sampler_init_grammar(model.vocab, g, "root") else { throw CoreError.model("bad grammar") }
-            llama_sampler_chain_add(chain, gs)
+            if lazyGrammar { gsampler = gs } else { llama_sampler_chain_add(chain, gs) }
         }
+        defer { if let gsampler { llama_sampler_free(gsampler) } }
         llama_sampler_chain_add(chain, llama_sampler_init_greedy())
+        let nVocab = Int(llama_vocab_n_tokens(model.vocab))
+        var scratch: [llama_token_data] = []
+        /// Greedy token for the last position; under the grammar (lazily) when there is one.
+        func nextToken() -> llama_token {
+            guard let gs = gsampler else { return llama_sampler_sample(chain, ctx, -1) }
+            let logits = llama_get_logits_ith(ctx, -1)!
+            var best = 0
+            for i in 1..<nVocab where logits[i] > logits[best] { best = i }
+            var one = llama_token_data(id: llama_token(best), logit: logits[best], p: 0)
+            let ok: Bool = withUnsafeMutablePointer(to: &one) { ptr in
+                var arr = llama_token_data_array(data: ptr, size: 1, selected: -1, sorted: false)
+                llama_sampler_apply(gs, &arr)
+                return arr.data[0].logit.isFinite
+            }
+            if ok { llama_sampler_accept(gs, llama_token(best)); return llama_token(best) }
+            if scratch.count != nVocab { scratch = (0..<nVocab).map { llama_token_data(id: llama_token($0), logit: 0, p: 0) } }
+            for i in 0..<nVocab { scratch[i] = llama_token_data(id: llama_token(i), logit: logits[i], p: 0) }
+            let tok: llama_token = scratch.withUnsafeMutableBufferPointer { buf in
+                var arr = llama_token_data_array(data: buf.baseAddress, size: nVocab, selected: -1, sorted: false)
+                llama_sampler_apply(gs, &arr)
+                var b = 0
+                for i in 1..<nVocab where buf[i].logit > buf[b].logit { b = i }
+                return buf[b].id
+            }
+            llama_sampler_accept(gs, tok)
+            return tok
+        }
 
         let t0 = DispatchTime.now().uptimeNanoseconds
         var tokens = promptTokens
@@ -121,7 +154,7 @@ public final class LlamaSession {
         var tFirst: UInt64?
         var generated = 0
         while generated < maxTokens {
-            var tok = llama_sampler_sample(chain, ctx, -1)
+            var tok = nextToken()
             if llama_vocab_is_eog(model.vocab, tok) { break }
             generated += 1
             let p = model.piece(tok)

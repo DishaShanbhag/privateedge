@@ -1,7 +1,7 @@
 import CalendarCore
 import Foundation
 
-// engine-check <C0|C1|C3> [--limit N]   (Today Date = each item's reference date, as the Mac runner)
+// engine-check <C0|C1|C3> [--limit N] [--fast]   (--fast: lazy grammar + prompt lookup, timed against plain)   (Today Date = each item's reference date, as the Mac runner)
 // Compares raw outputs (and, for C3, final decisions) with results/<config>_calendar_dev_trajectory.jsonl.
 
 let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../..").standardized
@@ -10,6 +10,7 @@ func read(_ p: String) -> String { (try? String(contentsOf: repo.appendingPathCo
 var args = Array(CommandLine.arguments.dropFirst())
 let config = args.first ?? "C1"
 var limit = Int.max
+let fast = args.contains("--fast")
 if let i = args.firstIndex(of: "--limit") { limit = Int(args[i + 1])! }
 
 let system = read("prompts/calendar_v0.txt")
@@ -25,15 +26,30 @@ for line in read("results/\(config)_calendar_dev_trajectory.jsonl").split(separa
     if case .obj(let o) = try parseJSON(String(line)) { mac[o["id"]!.asString!] = o }
 }
 
+let env = ProcessInfo.processInfo.environment
 var engineRef: LlamaEngine? = try LlamaEngine(path: repo.appendingPathComponent("models/Llama-3.2-3B-Instruct-Q4_K_M.gguf").path, mmap: true)
 
-print(String(format: "loaded in %.1f s; config %@", engineRef!.loadMs / 1000, config))
+if let d = env["LOOKUP"], let k = Int(d) { engineRef!.lookupDraft = k }
+if env["LAZY"] == "0" { engineRef!.lazyGrammar = false }
+print(String(format: "loaded in %.1f s; config %@; lazyGrammar %@ lookupDraft %d", engineRef!.loadMs / 1000, config,
+             engineRef!.lazyGrammar ? "on" : "off", engineRef!.lookupDraft))
 
 var sameRaw = 0, sameDecision = 0, sameTokens = 0, n = 0
+var fastSame = 0, totalPasses = 0, totalOut = 0
+var plainMs: [Double] = [], fastMs: [Double] = []
+func median(_ x: [Double]) -> Double { let s = x.sorted(); return s.isEmpty ? 0 : s[s.count / 2] }
 var diffs: [String] = []
 for item in items.prefix(limit) {
     let prompt = chatPrompt(system: system, user: userMessage(item), today: templateDate(item))
-    let (raw, info) = try engineRef!.generate(prompt: prompt, grammar: grammar, maxTokens: 160, timeoutS: 60)
+    var (raw, info) = try engineRef!.generate(prompt: prompt, grammar: grammar, maxTokens: 160, timeoutS: 60)
+    if fast {
+        let (raw2, info2, passes) = try engineRef!.generateFast(prompt: prompt, grammar: grammar, maxTokens: 160, timeoutS: 60)
+        fastSame += raw2 == raw ? 1 : 0
+        plainMs.append(info.totalMs - (info.firstTokenMs ?? 0)); fastMs.append(info2.totalMs - (info2.firstTokenMs ?? 0))
+        totalPasses += passes; totalOut += info2.outputTokens
+        if raw2 != raw { print("FAST DIFF \(item.id)\n  plain: \(raw)\n  fast:  \(raw2)") }
+        (raw, info) = (raw2, info2)
+    }
     var (action, _) = parseAction(raw)
     if config == "C3", let a = action { action = verify(item, a).0 }
     let decision = action.map { a -> String in
@@ -51,4 +67,8 @@ for item in items.prefix(limit) {
 }
 print("\nIdentical raw output: \(sameRaw)/\(n); same decision: \(sameDecision)/\(n); same input token count: \(sameTokens)/\(n)")
 for d in diffs.prefix(10) { print(d) }
+if fast {
+    print(String(format: "FAST: identical to plain decoding %d/%d; writing time median plain %.0f ms -> fast %.0f ms (x%.2f); %.2f tokens per forward pass",
+                 fastSame, n, median(plainMs), median(fastMs), median(plainMs) / max(1, median(fastMs)), Double(totalOut) / Double(max(1, totalPasses))))
+}
 engineRef = nil  // free Metal resources before exit (otherwise ggml asserts at teardown)

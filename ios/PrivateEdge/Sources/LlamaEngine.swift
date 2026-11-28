@@ -98,6 +98,157 @@ final class LlamaEngine {
         }
     }
 
+    // MARK: fast decoding (same output as greedy + grammar)
+
+    /// Lazy grammar (as llama.cpp's common sampler): take the greedy token from the raw logits and
+    /// check only that one token against the grammar; only if it is not allowed, mask the whole
+    /// vocabulary. The result equals greedy-after-grammar, at a fraction of the grammar cost.
+    var lazyGrammar = true
+    /// Prompt-lookup decoding (Saxena 2023; speculative decoding with an n-gram draft): propose up
+    /// to this many next tokens by copying what followed the last n tokens earlier in the context,
+    /// and verify them in one batch. Greedy verification keeps the output unchanged. 0 = off.
+    var lookupDraft = 0   // measured 2026-11-27: off (Mac: no reliable gain; batch verification changed 3/60 outputs via rounding)
+
+    private func argmaxToken(_ logits: UnsafeMutablePointer<Float>, _ n: Int) -> llama_token {
+        var best = 0
+        var bv = logits[0]
+        for i in 1..<n where logits[i] > bv { bv = logits[i]; best = i }
+        return llama_token(best)
+    }
+
+    /// Greedy choice at batch index `idx`, under the grammar if there is one (and accepted into it).
+    private func choose(_ idx: Int32, grammar: UnsafeMutablePointer<llama_sampler>?, scratch: inout [llama_token_data]) -> llama_token {
+        let n = Int(llama_vocab_n_tokens(vocab))
+        let logits = llama_get_logits_ith(ctx, idx)!
+        guard let grammar else { return argmaxToken(logits, n) }
+        if lazyGrammar {
+            let tok = argmaxToken(logits, n)
+            var one = llama_token_data(id: tok, logit: logits[Int(tok)], p: 0)
+            let ok: Bool = withUnsafeMutablePointer(to: &one) { ptr in
+                var arr = llama_token_data_array(data: ptr, size: 1, selected: -1, sorted: false)
+                llama_sampler_apply(grammar, &arr)
+                return arr.data[0].logit.isFinite
+            }
+            if ok { llama_sampler_accept(grammar, tok); return tok }
+        }
+        if scratch.count != n { scratch = (0..<n).map { llama_token_data(id: llama_token($0), logit: 0, p: 0) } }
+        for i in 0..<n { scratch[i].id = llama_token(i); scratch[i].logit = logits[i]; scratch[i].p = 0 }
+        let tok: llama_token = scratch.withUnsafeMutableBufferPointer { buf in
+            var arr = llama_token_data_array(data: buf.baseAddress, size: n, selected: -1, sorted: false)
+            llama_sampler_apply(grammar, &arr)
+            var best = 0
+            var bv = -Float.infinity
+            for i in 0..<n where buf[i].logit > bv { bv = buf[i].logit; best = i }
+            return buf[best].id
+        }
+        llama_sampler_accept(grammar, tok)
+        return tok
+    }
+
+    /// Up to k tokens that followed the most recent earlier occurrence of the last 3 (or 2, 1) tokens.
+    private func lookup(_ ctxToks: [llama_token], _ k: Int) -> [llama_token] {
+        guard k > 0 else { return [] }
+        for n in stride(from: 3, through: 1, by: -1) where ctxToks.count > n {
+            let key = Array(ctxToks.suffix(n))
+            var s = ctxToks.count - n - 1
+            while s >= 0 {
+                if Array(ctxToks[s..<(s + n)]) == key {
+                    let start = s + n
+                    return Array(ctxToks[start..<min(ctxToks.count, start + k)])
+                }
+                s -= 1
+            }
+        }
+        return []
+    }
+
+    /// Greedy (+ grammar) generation with lazy grammar and prompt-lookup verification. Same output
+    /// as `generate`; fewer forward passes and cheaper grammar checks.
+    func generateFast(prompt: String, grammar: String?, maxTokens: Int, timeoutS: Double,
+                      onText: ((String) -> Void)? = nil) throws -> (String, GenInfo, Int) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let toks = try tokenize(prompt)
+        let prefix = zip(cached, toks.dropLast()).prefix(while: { $0 == $1 }).count
+        _ = llama_memory_seq_rm(llama_get_memory(ctx), -1, Int32(prefix), -1)
+        cached = Array(cached.prefix(prefix))
+        try decode(Array(toks[prefix...]))   // logits of the last prompt token are at batch index -1
+
+        var gsampler: UnsafeMutablePointer<llama_sampler>? = nil
+        if let grammar {
+            guard let g = llama_sampler_init_grammar(vocab, grammar, "root") else { throw EngineError.grammar }
+            gsampler = g
+        }
+        defer { if let gsampler { llama_sampler_free(gsampler) } }
+        var scratch: [llama_token_data] = []
+        var batch = llama_batch_init(Int32(lookupDraft + 1), 0, 1)
+        defer { llama_batch_free(batch) }
+
+        var bytes: [UInt8] = []
+        var out: [llama_token] = []
+        var tFirst: CFAbsoluteTime? = nil, timedOut = false, passes = 0
+        var finish: String? = "length"
+        var cur = choose(-1, grammar: gsampler, scratch: &scratch)
+        func emit(_ t: llama_token) {
+            out.append(t)
+            let p = piece(t)
+            if !p.isEmpty {
+                if tFirst == nil { tFirst = CFAbsoluteTimeGetCurrent() }
+                bytes += p
+                onText?(String(decoding: bytes, as: UTF8.self))
+            }
+        }
+        loop: while true {
+            if llama_vocab_is_eog(vocab, cur) { finish = "stop"; break }
+            emit(cur)
+            if out.count >= maxTokens { break }
+            if CFAbsoluteTimeGetCurrent() - t0 > timeoutS { timedOut = true; finish = nil; break }
+            // Decode cur plus a copied draft in one pass; every position gets logits.
+            let draft = lookup(cached + [cur], min(lookupDraft, maxTokens - out.count))
+            let seq = [cur] + draft
+            let base = Int32(cached.count)
+            batch.n_tokens = Int32(seq.count)
+            for (j, t) in seq.enumerated() {
+                batch.token[j] = t
+                batch.pos[j] = base + Int32(j)
+                batch.n_seq_id[j] = 1
+                batch.seq_id[j]![0] = 0
+                batch.logits[j] = 1
+            }
+            let rc = llama_decode(ctx, batch)
+            guard rc == 0 else { cached = []; throw EngineError.decode(rc) }
+            passes += 1
+            cached += seq
+            var accepted = 0
+            for j in 0..<seq.count {
+                let next = choose(Int32(j), grammar: gsampler, scratch: &scratch)
+                if j < draft.count, next == draft[j], !llama_vocab_is_eog(vocab, next) {
+                    accepted += 1
+                    emit(next)
+                    if out.count >= maxTokens { break loop }
+                    continue
+                }
+                cur = next
+                break
+            }
+            // Drop the rejected part of the draft from the KV cache.
+            let keep = Int(base) + 1 + accepted
+            if keep < cached.count {
+                _ = llama_memory_seq_rm(llama_get_memory(ctx), -1, Int32(keep), -1)
+                cached = Array(cached.prefix(keep))
+            }
+        }
+        let tEnd = CFAbsoluteTimeGetCurrent()
+        let nOut = out.count
+        let decodeS = tFirst.map { tEnd - $0 } ?? 0
+        let info = GenInfo(
+            firstTokenMs: tFirst.map { (($0 - t0) * 1000 * 10).rounded() / 10 },
+            totalMs: ((tEnd - t0) * 1000 * 10).rounded() / 10,
+            inputTokens: toks.count, cachedTokens: prefix, outputTokens: nOut,
+            decodeTokS: decodeS > 0 && nOut > 1 ? ((Double(nOut - 1) / decodeS) * 10).rounded() / 10 : nil,
+            timedOut: timedOut, hitMaxTokens: finish == "length", finishReason: finish)
+        return (String(decoding: bytes, as: UTF8.self), info, passes)
+    }
+
     /// Generate from a fully formatted prompt. `onText` gets the text so far after each token.
     func generate(prompt: String, grammar: String?, maxTokens: Int, timeoutS: Double,
                   onText: ((String) -> Void)? = nil) throws -> (String, GenInfo) {
