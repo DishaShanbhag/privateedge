@@ -2,4 +2,4 @@
 inherits: _base.yaml
 prompts:
   notes: prompts/notes_v0.txt
-  calendar: prompts/calendar_v0.txt
+  calendar: prompts/calendar_v0.txt   # v1 (+ "Which action" rules) tested 2026-11-27 and rejected: configs/C*_promptv1.yaml
