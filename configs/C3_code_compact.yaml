@@ -1,0 +1,11 @@
+# Experiment (2026-11-27): C3+code with a compact output. The model writes only the action, the title
+# and the source spans; no date, time, duration or amount values (38% of C3+code's output tokens on dev),
+# since code recomputes them anyway. Aim: fewer tokens to decode on the phone. Accuracy measured on dev.
+inherits: C3_code.yaml
+output_format: compact
+prompts:
+  notes: prompts/notes_v0.txt
+  calendar: prompts/calendar_compact.txt
+grammars:
+  notes: schemas/notes.gbnf
+  calendar: schemas/calendar_compact.gbnf

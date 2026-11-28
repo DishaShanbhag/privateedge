@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-from calendar_schema import Clarify, action_json_schema, parse_action, to_pred
+from calendar_schema import Clarify, action_json_schema, parse_action, parse_compact, to_pred
 from chat_prompt import render_llama32, tokenize_prompt
 from config import load_config
 from io_utils import read_jsonl, write_jsonl
@@ -229,7 +229,10 @@ def run(items, model, system, cfg, verifier=None):
         except QuotaExhausted as e:
             print(f"\nSTOPPED at {it['id']} ({i - 1}/{len(items)} done): {e}")
             break
-        action, err = parse_action(raw)
+        if cfg.get("output_format") == "compact":
+            action, err = parse_compact(raw, it["reference_time"], it["tz"])
+        else:
+            action, err = parse_action(raw)
         before = to_pred(it["id"], action)
         verdict, repair = None, None
         if verifier is not None and action is not None:

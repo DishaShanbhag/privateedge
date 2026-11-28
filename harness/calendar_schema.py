@@ -134,6 +134,36 @@ def parse_action(text):
     return validate_action(obj)
 
 
+COMPACT_KEYS = {"event": {"action", "title", "spans"}, "reminder": {"action", "title", "spans"},
+                "expense": {"action", "description", "spans"}, "none": {"action"}, "clarify": {"action", "fields"}}
+
+
+def parse_compact(text, reference_time, tz):
+    """Compact output (C3+code compact): the action without date/time/amount values, which the
+    verifier computes from the spans (value_source: code). Placeholders fill the value fields so
+    the usual models validate the rest; recompute() replaces them. Never raises."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    obj = extract_json(text)
+    if obj is None:
+        return None, "not_json"
+    kind = obj.get("action")
+    if kind not in COMPACT_KEYS:
+        return None, "schema: unknown action"
+    extra = set(obj) - COMPACT_KEYS[kind]
+    if extra:
+        return None, f"schema: unexpected keys {sorted(extra)}"
+    ref = datetime.fromisoformat(reference_time).astimezone(ZoneInfo(tz)).replace(microsecond=0)
+    full = dict(obj)
+    if kind in ("event", "reminder"):
+        full["start"] = ref.isoformat()
+        if kind == "event":
+            full["duration_min"] = 60
+    elif kind == "expense":
+        full.update(amount="1.00", currency="USD", date=ref.date().isoformat())
+    return validate_action(full)
+
+
 def to_pred(item_id, action):
     """The predictions-file row for one item. A schema-invalid output scores as wrong."""
     if action is None:
