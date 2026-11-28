@@ -553,3 +553,14 @@ def test_recompute_replaces_model_date_with_code_value():
                          '"spans": {"date": null, "time": "at 7", "duration": null, "title": "dinner"}}')
     final2, v2 = recompute({**item, "message": "dinner at 7"}, a2)
     assert final2.action == "clarify" and final2.fields == ["date"]
+
+
+# ---------------------------------------------------------------- real-data intake
+
+def test_intake_flags_personal_details_and_accepts_placeholders():
+    from intake_real import maybe_names, problems
+    found = problems("call Priya at 917-555-0142 or priya@x.com, 340 E 23rd St, card 4111 1111 1111 1111", ["Priya"])
+    kinds = {f.split(":")[0] for f in found}
+    assert {"phone number", "email address", "street address", "long number (card/account)", "listed name"} <= kinds
+    assert problems("dinner w <NAME> fri at 7, paid $12.50 on 11/20", ["Priya"]) == []
+    assert "NAME" not in maybe_names("dinner w <NAME> fri at 7")
