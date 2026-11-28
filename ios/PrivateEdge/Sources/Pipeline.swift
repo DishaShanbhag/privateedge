@@ -3,15 +3,16 @@ import Foundation
 
 /// The calendar ladder on the phone. C2 is identical to C1 for calendar (retrieval is notes-only).
 enum LadderConfig: String, CaseIterable, Identifiable {
-    case C0, C1, C3, C3_repair
+    case C0, C1, C3, C3_code, C3_repair
     var id: String { rawValue }
     var grammar: Bool { self != .C0 }
-    var verify: Bool { self == .C3 || self == .C3_repair }
+    var verify: Bool { self == .C3 || self == .C3_repair || self == .C3_code }
     var label: String {
         switch self {
         case .C0: return "C0 · prompt only"
         case .C1: return "C1 · + grammar"
         case .C3: return "C3 · + verification"
+        case .C3_code: return "C3 + code computes the values"
         case .C3_repair: return "C3 + one repair retry"
         }
     }
@@ -72,7 +73,8 @@ func verdictJSON(_ v: Verdict, recovery: String?) -> JV {
     for k in v.details.keys.sorted() { details[k] = .str(v.details[k]!) }
     return .obj(JObj([("ok", .bool(v.ok)), ("failed", .arr(v.failed.map { .str($0) })),
                       ("clarify_field", v.clarifyField.map { .str($0) } ?? .null),
-                      ("details", .obj(details)), ("recovery", recovery.map { .str($0) } ?? .null)]))
+                      ("details", .obj(details)), ("recovery", recovery.map { .str($0) } ?? .null),
+                      ("replaced", .arr(v.replaced.map { .str($0) }))]))
 }
 
 func infoJSON(_ i: GenInfo) -> JObj {
@@ -129,7 +131,15 @@ func runPipeline(engine: LlamaEngine, item: Item, config: LadderConfig, today: S
     var result = RunResult(item: item, config: config, raw: raw, parseError: err, before: action, final: action,
                            verdict: nil, recovery: nil, repair: nil, info: info, verifyMs: nil,
                            device: before, today: today)
-    if config.verify, let action {
+    if config == .C3_code, let action {
+        // The model picks the action, title and source words; code computes every value.
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let (final, v) = recompute(item, action)
+        result.verifyMs = ((CFAbsoluteTimeGetCurrent() - t0) * 1000 * 1000).rounded() / 1000
+        result.verdict = v
+        result.final = final
+        result.recovery = v.ok ? nil : "clarify"
+    } else if config.verify, let action {
         let t0 = CFAbsoluteTimeGetCurrent()
         let v = check(item, action)
         result.verifyMs = ((CFAbsoluteTimeGetCurrent() - t0) * 1000 * 1000).rounded() / 1000
