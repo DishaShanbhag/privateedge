@@ -109,7 +109,7 @@ final class AppModel: ObservableObject {
             }
         }
         guard let i = args.firstIndex(of: "-autorun"), i + 1 < args.count else { return }
-        let configs = args.contains("-allConfigs") ? [LadderConfig.C0, .C1, .C3] : [.C3]
+        let configs = args.contains("-allConfigs") ? [LadderConfig.C0, .C1, .C3, .C3_code] : [.C3_code]
         for cfg in configs {
             do {
                 let it = nowItem(args[i + 1]); let r = try await service.run(it, cfg, today: templateDate(it))

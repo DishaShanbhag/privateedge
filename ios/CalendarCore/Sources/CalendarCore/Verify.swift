@@ -97,6 +97,7 @@ public struct Verdict: Equatable {
     public var failed: [String]
     public var clarifyField: String?
     public var details: [String: String]
+    public var replaced: [String] = []   // C3 + code values: fields where code replaced the model's value
 }
 
 /// The context the verifier needs about one message.
@@ -197,6 +198,65 @@ public func check(_ item: Item, _ action: Action, crosscheck: Bool = true,
 private func order(_ kind: String, _ k: String) -> Int { SPAN_KEYS[kind]?.firstIndex(of: k) ?? 99 }
 
 /// C3 with recovery = clarify (as proposed): a failed check becomes clarify(field).
+/// drop_and_merge spans: spans not in the message are ignored; date and time are read together.
+func spansUsed(_ action: Action, _ msg: String) -> [String: String] {
+    let low = msg.pyLower
+    var used = action.spans.filter { low.pyContains($0.value.pyLower) }
+    if action.kind == "event" || action.kind == "reminder" {
+        let joined = [used["date"], used["time"]].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        used["date"] = joined.isEmpty ? nil : joined
+        used["time"] = joined.isEmpty ? nil : joined
+    }
+    return used
+}
+
+/// C3 + code values (verify_calendar.recompute): keep the model's action, title and spans; compute
+/// every date, time, duration and amount from the spans with the conventions code.
+public func recompute(_ item: Item, _ action: Action, crosscheck: Bool = true) -> (Action, Verdict) {
+    var v = Verdict(ok: true, failed: [], clarifyField: nil, details: [:])
+    let kind = action.kind
+    guard ["event", "reminder", "expense"].contains(kind) else { return (action, v) }
+    let msg = item.message
+    func ask(_ name: String, _ fld: String, _ why: String) {
+        v.ok = false; v.failed.append(name); v.details[name] = why; v.clarifyField = v.clarifyField ?? fld
+    }
+    let r = resolveAction(kind, spansUsed(action, msg), msg, item.referenceTime, item.tz)
+    let title: String
+    switch action {
+    case .event(let e): title = e.title
+    case .reminder(let x): title = x.title
+    case .expense(let x): title = x.description
+    default: title = ""
+    }
+    let bad = unsupportedWords(title, msg)
+    if !bad.isEmpty { ask("title", "conflict", "not in message: \(bad)") }
+    if let c = r.clarify { ask("resolve", c, "conventions say clarify(\(c))") }
+    if crosscheck, kind == "event" || kind == "reminder" {
+        let nd = check(item, action, crosscheck: true, spanPolicy: .dropAndMerge)
+        if nd.failed.contains("nsdd") { ask("nsdd", "date", nd.details["nsdd"] ?? "") }
+    }
+    if !v.ok { return (.clarify([v.clarifyField!]), v) }
+    let val = r.value!
+    switch action {
+    case .expense(var x):
+        if val.amount != x.amount || val.currency != x.currency { v.replaced.append("amount") }
+        if val.date != x.date.description { v.replaced.append("date") }
+        x.amount = val.amount!; x.currency = val.currency!; x.date = Day.parse(val.date!)!
+        return (.expense(x), v)
+    case .event(var e):
+        if !sameTime(val.start, e.start.iso) { v.replaced.append("start") }
+        if val.durationMin != e.durationMin { v.replaced.append("duration") }
+        e.start = ZDT.parse(val.start!)!; e.durationMin = val.durationMin!
+        return (.event(e), v)
+    case .reminder(var x):
+        if !sameTime(val.start, x.start.iso) { v.replaced.append("start") }
+        x.start = ZDT.parse(val.start!)!
+        return (.reminder(x), v)
+    default:
+        return (action, v)
+    }
+}
+
 public func verify(_ item: Item, _ action: Action, crosscheck: Bool = true,
                    spanPolicy: SpanPolicy = .dropAndMerge) -> (Action, Verdict) {
     let v = check(item, action, crosscheck: crosscheck, spanPolicy: spanPolicy)

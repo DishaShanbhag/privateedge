@@ -1,0 +1,11 @@
+# C3 + code values (2026-11-27): the model chooses the action, the title and the source spans; every
+# date, time, duration and amount is computed from those spans by the conventions code (resolver.py).
+# Motivation: in C1 the model's date was right on 53.7% of items (date arithmetic is its main error).
+# Same prompt, grammar and generation as C3. Dev results are optimistic (the resolver also computed the
+# dev gold labels); the blind test set gives the honest number.
+inherits: C3.yaml
+verifier:
+  calendar_crosscheck: nsdatadetector
+  span_policy: drop_and_merge
+  recovery: clarify
+  value_source: code

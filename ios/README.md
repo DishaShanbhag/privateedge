@@ -30,6 +30,8 @@ ios/
 | Measure | feasibility gate, full run, sustained and stress runs, with device measurements | PrivateEdgeCore |
 | Model | load, GPU switch, SHA-256 check, device memory | |
 
+Calendar offers C0, C1, C3 and **C3+code** (the default): the model picks the action, title and source words, and code computes every date, time and amount. Calendar and Notes have a **mic button**: Apple's on-device speech only (audio never leaves the phone; it refuses where on-device recognition is unavailable, as in most Simulators). The measurement engine reuses the shared prompt prefix between requests (`cached_tokens` in trajectories).
+
 Calendar and Notes share one copy of the weights; Measure frees it, runs with its own copy, then reloads it.
 
 ```bash

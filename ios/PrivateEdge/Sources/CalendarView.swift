@@ -6,7 +6,7 @@ import SwiftUI
 struct CalendarView: View {
     @EnvironmentObject var app: AppModel
     @State private var message = ""
-    @State private var config: LadderConfig = .C3
+    @State private var config: LadderConfig = .C3_code
     @State private var streaming = ""
     @State private var result: RunResult?
     @State private var running = false
@@ -20,10 +20,13 @@ struct CalendarView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Type a message…", text: $message, axis: .vertical)
-                        .lineLimit(1...4)
-                        .submitLabel(.go)
-                        .onSubmit(run)
+                    HStack(alignment: .top) {
+                        TextField("Type a message…", text: $message, axis: .vertical)
+                            .lineLimit(1...4)
+                            .submitLabel(.go)
+                            .onSubmit(run)
+                        MicButton(text: $message)
+                    }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
                             ForEach(examples, id: \.self) { ex in
@@ -33,7 +36,7 @@ struct CalendarView: View {
                         }
                     }
                     Picker("Pipeline", selection: $config) {
-                        ForEach([LadderConfig.C0, .C1, .C3], id: \.self) { Text($0.rawValue).tag($0) }
+                        ForEach([LadderConfig.C0, .C1, .C3, .C3_code], id: \.self) { Text($0 == .C3_code ? "C3+code" : $0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     Button(action: run) {
@@ -190,6 +193,10 @@ struct VerifierView: View {
                 ForEach(v.details.keys.sorted(), id: \.self) { k in
                     Text("\(k): \(v.details[k]!)").font(.footnote).foregroundStyle(.secondary)
                 }
+            }
+            if !v.replaced.isEmpty {
+                Label("Code computed the \(v.replaced.joined(separator: ", ")) from your words; the model's value was different.",
+                      systemImage: "function").font(.footnote)
             }
             if let b = result.before, b != result.final {
                 Text("Model said: \(b.kind); shown: \(result.final?.kind ?? "-")").font(.footnote)

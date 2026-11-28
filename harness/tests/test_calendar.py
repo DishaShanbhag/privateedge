@@ -538,3 +538,29 @@ def test_cad_aud_symbols_and_evening_reminder():
     r = resolve_action("reminder", {"date": "tomorrow"}, "remind me to buy drinks tomorrow",
                        "2026-11-02T10:00:00-05:00", "America/New_York")
     assert r.value["start"] == "2026-11-03T09:00:00-05:00"
+
+
+def test_recompute_replaces_model_date_with_code_value():
+    """C3 + code values: a wrong model date becomes the conventions' date; title and spans kept."""
+    from verify_calendar import recompute
+    item = {"id": "x", "message": "dinner Friday at 7", "reference_time": "2026-11-02T10:00:00-05:00", "tz": "America/New_York"}
+    a, _ = parse_action('{"action": "event", "title": "dinner", "start": "2026-11-05T19:00:00-05:00", "duration_min": 60, '
+                        '"spans": {"date": "Friday", "time": "at 7", "duration": null, "title": "dinner"}}')
+    final, v = recompute(item, a)
+    assert v["ok"] and v["replaced"] == ["start"]
+    assert final.start.isoformat() == "2026-11-06T19:00:00-05:00" and final.title == "dinner"
+    a2, _ = parse_action('{"action": "event", "title": "dinner", "start": "2026-11-05T19:00:00-05:00", "duration_min": 60, '
+                         '"spans": {"date": null, "time": "at 7", "duration": null, "title": "dinner"}}')
+    final2, v2 = recompute({**item, "message": "dinner at 7"}, a2)
+    assert final2.action == "clarify" and final2.fields == ["date"]
+
+
+# ---------------------------------------------------------------- real-data intake
+
+def test_intake_flags_personal_details_and_accepts_placeholders():
+    from intake_real import maybe_names, problems
+    found = problems("call Priya at 917-555-0142 or priya@x.com, 340 E 23rd St, card 4111 1111 1111 1111", ["Priya"])
+    kinds = {f.split(":")[0] for f in found}
+    assert {"phone number", "email address", "street address", "long number (card/account)", "listed name"} <= kinds
+    assert problems("dinner w <NAME> fri at 7, paid $12.50 on 11/20", ["Priya"]) == []
+    assert "NAME" not in maybe_names("dinner w <NAME> fri at 7")
