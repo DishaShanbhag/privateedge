@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 from calendar_schema import Clarify, Event, Expense, Reminder
-from resolver import parse_amount, resolve_action
+from resolver import mentions_date, parse_amount, resolve_action
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval"))
 from score_calendar import same_time, unsupported_words  # noqa: E402  (the conventions' title rule)
@@ -117,6 +117,10 @@ def _spans_used(action, msg):
     if action.action in ("event", "reminder"):
         joined = " ".join(s for s in (used.get("date"), used.get("time")) if s) or None
         used = {**used, "date": joined, "time": joined}
+        if not mentions_date(joined):
+            # The model's date words are not in the message (it copied the prompt's "Now:" line,
+            # say), so its kept words name no date: read the date and time from the whole message.
+            used = {**used, "date": msg, "time": msg}
     return used
 
 

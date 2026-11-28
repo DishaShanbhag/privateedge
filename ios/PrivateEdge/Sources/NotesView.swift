@@ -2,129 +2,146 @@ import CalendarCore
 import PrivateEdgeCore
 import SwiftUI
 
-/// The notes screen: ask a question, the app searches the 49 dev notes on the phone and answers with
-/// citations, or says "the notes don't say". Uses Yash's PrivateEdgeCore (retrieval, prompt, parsing)
-/// with the run settings exported from configs/ (ios/Bundle/manifest.json), and the app's shared
-/// model, so calendar and notes never hold two copies of the weights.
+struct NotesTurn: Identifiable {
+    let id = UUID()
+    let question: String
+    var result: NotesResult?
+    var error: String?
+    let started = Date()
+}
+
+/// The notes screen: ask a question about your notes. The app searches them on the phone and answers
+/// with the notes it used, or says the notes don't say. Uses Yash's PrivateEdgeCore (retrieval,
+/// prompt, parsing) with the settings exported from configs/, and the app's shared model.
 struct NotesView: View {
     @EnvironmentObject var app: AppModel
-    @State private var question = ""
-    @State private var runName = "C2_notes"
-    @State private var streaming = ""
-    @State private var result: NotesResult?
+    @AppStorage("notesPipeline") private var runName = "C2_notes"
+    @State private var input = ""
+    @State private var turns: [NotesTurn] = []
+    @State private var partial = ""
     @State private var running = false
-    @State private var error: String?
+    @State private var showSettings = false
 
-    // From the dev set (answers: tangerine-4471; 0629; Tue 3pm with Dr. Patel; the notes disagree;
-    // phone yes, email not in the notes; and one the notes cannot answer).
-    private let examples = ["What's the wifi password?", "What's my bike lock combination?",
-                            "When is my doctor's appointment?", "What are the gym's weekend hours?",
-                            "What's my landlord's phone number and email?", "What is my passport number?"]
+    private let examples = ["What's the wifi password?", "When is my doctor's appointment?",
+                            "What are the gym's weekend hours?", "What is my passport number?"]
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    HStack(alignment: .top) {
-                        TextField("Ask about your notes…", text: $question, axis: .vertical)
-                            .lineLimit(1...4)
-                            .onSubmit(run)
-                        MicButton(text: $question)
-                    }
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(examples, id: \.self) { ex in
-                                Button(ex) { question = ex }.buttonStyle(.bordered).controlSize(.small)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        PrivacyPill()
+                        ModelBanner()
+                        if turns.isEmpty {
+                            VStack(alignment: .leading, spacing: 14) {
+                                Text("Ask anything about your notes. I only answer from what they say, show you where it came from, and tell you when they don't say.")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                ExampleChips(title: "Try one:", examples: examples) { send($0) }
                             }
                         }
-                    }
-                    Picker("Pipeline", selection: $runName) {
-                        Text("C0").tag("C0_notes")
-                        Text("C1").tag("C1_notes")
-                        Text("C2").tag("C2_notes")
-                    }
-                    .pickerStyle(.segmented)
-                    Button(action: run) {
-                        HStack {
-                            if running { ProgressView().padding(.trailing, 4) }
-                            Text(running ? "Searching and thinking on device…" : "Ask")
-                        }.frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(running || question.trimmingCharacters(in: .whitespaces).isEmpty || !ready)
-                } footer: {
-                    VStack(alignment: .leading) {
-                        Text("C0: keyword search, prompt only · C1: + grammar · C2: + hybrid search (keywords + embeddings)")
-                        if !ready { ModelStatusLine() }
-                    }
-                }
-
-                if let r = result {
-                    Section("Found notes (\(r.searchMs < 1 ? "<1" : String(format: "%.0f", r.searchMs)) ms)") {
-                        ForEach(r.hits, id: \.noteID) { h in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("[\(h.noteID)] \(h.title)").font(.footnote.bold())
-                                Text(h.body).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                        ForEach(turns) { t in
+                            UserBubble(text: t.question)
+                            if let r = t.result {
+                                NotesAnswerCard(result: r)
+                            } else if let e = t.error {
+                                AnswerCard(icon: "xmark", color: .red, kind: "Something went wrong") { Text(e).font(.callout) }
+                            } else {
+                                ThinkingCard(started: t.started, partial: partial)
                             }
                         }
+                        Color.clear.frame(height: 1).id("bottom")
                     }
+                    .padding()
                 }
-                if running || result != nil {
-                    Section("Model output") {
-                        Text(result?.raw ?? streaming).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
-                    }
-                }
-                if let r = result {
-                    Section("Answer") {
-                        if !r.formatOK {
-                            Label("The model's answer was not in the required format", systemImage: "xmark.octagon").foregroundStyle(.red)
-                        }
-                        if r.abstained {
-                            Label("The notes don't say.", systemImage: "questionmark.circle")
-                        } else {
-                            Text(r.answer).font(.headline)
-                        }
-                        ForEach(Array(r.citations.enumerated()), id: \.offset) { _, c in
-                            let ok = r.quoteFound(c)
-                            Label("[\(c.note_id)] “\(c.quote)”", systemImage: ok ? "quote.opening" : "exclamationmark.triangle")
-                                .font(.footnote)
-                                .foregroundStyle(ok ? Color.secondary : Color.orange)
-                        }
-                        if r.citations.contains(where: { !r.quoteFound($0) }) {
-                            Text("Orange: the quote is not in that note word for word.").font(.caption).foregroundStyle(.orange)
-                        }
-                    }
-                    Section("On-device cost") {
-                        Grid(alignment: .leading, verticalSpacing: 4) {
-                            GridRow { Text("First token").foregroundStyle(.secondary); Text(r.info.firstTokenMs.map { String(format: "%.0f ms", $0) } ?? "-") }
-                            GridRow { Text("Total").foregroundStyle(.secondary); Text(String(format: "%.2f s", r.info.totalMs / 1000)) }
-                            GridRow { Text("Tokens in / out").foregroundStyle(.secondary); Text("\(r.info.inputTokens) / \(r.info.outputTokens)") }
-                            GridRow { Text("Network").foregroundStyle(.secondary); Text("none (runs fully on device)") }
-                        }.font(.footnote)
-                    }
-                }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
+                .background(Color(.systemGroupedBackground))
+                .onChange(of: turns.count) { withAnimation { proxy.scrollTo("bottom") } }
+                .onChange(of: running) { withAnimation { proxy.scrollTo("bottom") } }
+            }
+            .safeAreaInset(edge: .bottom) {
+                ChatInputBar(text: $input, placeholder: "Ask about your notes…", busy: running, enabled: ready) { send(input) }
             }
             .navigationTitle("Notes")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if !turns.isEmpty { Button("Clear conversation", systemImage: "trash") { turns = [] } }
+                        Picker("Search", selection: $runName) {
+                            Text("C2: keywords + meaning (recommended)").tag("C2_notes")
+                            Text("C1: keywords + strict format").tag("C1_notes")
+                            Text("C0: keywords, prompt only").tag("C0_notes")
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                }
+            }
+            .onChange(of: ready) { if ready, let demo = demoArgument("-demoNotes"), turns.isEmpty { send(demo) } }
         }
     }
 
     private var ready: Bool { if case .ready = app.state { return true }; return false }
 
-    private func run() {
-        guard ready, !running else { return }
-        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        running = true; result = nil; error = nil; streaming = ""
+    private func send(_ text: String) {
+        let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ready, !running, !q.isEmpty else { return }
+        input = ""
+        turns.append(NotesTurn(question: q))
+        let idx = turns.count - 1
+        running = true; partial = ""
         let name = runName
         Task {
             do {
-                result = try await app.service.answerNote(q, runName: name) { text in
-                    Task { @MainActor in streaming = text }
+                turns[idx].result = try await app.service.answerNote(q, runName: name) { text in
+                    Task { @MainActor in partial = text }
                 }
             } catch {
-                self.error = "\(error)"
+                turns[idx].error = "\(error)"
             }
             running = false
+        }
+    }
+}
+
+struct NotesAnswerCard: View {
+    let result: NotesResult
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !result.formatOK {
+                AnswerCard(icon: "exclamationmark", color: .red, kind: "Didn't understand") {
+                    Text("Sorry, the answer came out garbled. Try asking another way.").font(.callout)
+                }
+            } else if result.abstained {
+                AnswerCard(icon: "questionmark", color: .gray, kind: "Not in your notes") {
+                    Text("Your notes don't say.").font(.title3.weight(.semibold))
+                    Text("I'd rather tell you that than make something up.").font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                AnswerCard(icon: "text.quote", color: .indigo, kind: "From your notes") {
+                    Text(result.answer).font(.title3.weight(.semibold)).textSelection(.enabled)
+                    ForEach(Array(result.citations.enumerated()), id: \.offset) { _, c in
+                        let ok = result.quoteFound(c)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(result.notes[c.note_id]?.title ?? c.note_id, systemImage: "note.text")
+                                .font(.caption.weight(.semibold))
+                            Text("“\(c.quote)”").font(.caption).foregroundStyle(.secondary)
+                            if !ok { Text("This quote isn't word for word in that note.").font(.caption2).foregroundStyle(.orange) }
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+            }
+            DisclosureGroup("Details") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Notes searched (\(String(format: "%.0f", result.searchMs)) ms):").font(.caption.weight(.semibold))
+                    ForEach(result.hits, id: \.noteID) { h in Text("[\(h.noteID)] \(h.title)").font(.caption2) }
+                    Text(result.raw).font(.system(.caption2, design: .monospaced)).textSelection(.enabled)
+                    Text(String(format: "First word %.0f ms · total %.1f s · %d tokens in / %d out · no network",
+                                result.info.firstTokenMs ?? -1, result.info.totalMs / 1000,
+                                result.info.inputTokens, result.info.outputTokens)).font(.caption2).foregroundStyle(.secondary)
+                }
+                .padding(.top, 6)
+            }
+            .font(.caption).tint(.secondary).padding(.horizontal, 4)
         }
     }
 }

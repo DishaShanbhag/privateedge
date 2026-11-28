@@ -22,7 +22,6 @@ struct ReplayView: View {
     private let items = Resources.devItems
 
     var body: some View {
-        NavigationStack {
             Form {
                 Section {
                     Picker("Config", selection: $config) {
@@ -61,7 +60,6 @@ struct ReplayView: View {
                 if let error { Section { Text(error).foregroundStyle(.red) } }
             }
             .navigationTitle("Replay dev set")
-        }
     }
 
     private var ready: Bool { if case .ready = app.state { return true }; return false }

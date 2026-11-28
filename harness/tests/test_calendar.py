@@ -564,3 +564,16 @@ def test_intake_flags_personal_details_and_accepts_placeholders():
     assert {"phone number", "email address", "street address", "long number (card/account)", "listed name"} <= kinds
     assert problems("dinner w <NAME> fri at 7, paid $12.50 on 11/20", ["Priya"]) == []
     assert "NAME" not in maybe_names("dinner w <NAME> fri at 7")
+
+
+def test_recompute_reads_message_when_model_copies_the_now_line():
+    """The model's date span came from the prompt's "Now:" line (not in the message) and its time
+    span "7" names no date: code reads the date and time from the message itself."""
+    from verify_calendar import recompute
+    item = {"id": "x", "message": "Dinner with Sam Friday at 7", "reference_time": "2026-11-27T21:33:00-05:00",
+            "tz": "America/New_York"}
+    a, _ = parse_action('{"action": "event", "title": "Dinner with Sam", "start": "2026-11-26T19:00:00-05:00", '
+                        '"duration_min": 60, "spans": {"date": "Friday, 27 November 2026", "time": "7", '
+                        '"duration": "60 minutes", "title": "Dinner with Sam"}}')
+    final, v = recompute(item, a)
+    assert final.action == "event" and final.start.isoformat() == "2026-12-04T19:00:00-05:00"

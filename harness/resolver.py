@@ -218,6 +218,11 @@ def _looks_like_day(text, m):
         or m.group(0)[:1].isupper() or bool(alt_after) or bool(alt_before)
 
 
+def mentions_date(text) -> bool:
+    """Does the text name a date (or a vague one, which the conventions ask about)?"""
+    return bool(text) and (bool(_find_dates(text)) or bool(VAGUE_DATE.search(text)))
+
+
 def parse_date(text, ref: date, past=False) -> Parse:
     """Resolve the date mentioned in `text`. Two different dates -> clarify(which_event);
     a vague date ('sometime', 'next week') -> clarify(date); none -> empty Parse."""

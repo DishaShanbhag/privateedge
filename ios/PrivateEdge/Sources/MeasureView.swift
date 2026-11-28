@@ -123,7 +123,6 @@ struct MeasureView: View {
     @State private var runName = "C2_notes"
 
     var body: some View {
-        NavigationStack {
             Form {
                 Section("Device") {
                     LabeledContent("Thermal state", value: c.thermal)
@@ -152,6 +151,5 @@ struct MeasureView: View {
                 }
             }
             .navigationTitle("Measure")
-        }
     }
 }

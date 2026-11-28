@@ -200,6 +200,11 @@ private func looksLikeDay(_ text: String, _ m: RM) -> Bool {
         || altAfter || altBefore
 }
 
+/// Does the text name a date (or a vague one, which the conventions ask about)? (resolver.mentions_date)
+public func mentionsDate(_ text: String) -> Bool {
+    !text.isEmpty && (!findDates(text).isEmpty || VAGUE_DATE.first(text) != nil)
+}
+
 /// Resolve the date mentioned in `text`. Two different dates -> clarify(which_event); a vague date
 /// ("sometime", "next week") -> clarify(date); none -> empty Parse.
 public func parseDate(_ text: String?, _ ref: Day, past: Bool = false) -> Parse<Day> {

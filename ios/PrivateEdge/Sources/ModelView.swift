@@ -5,7 +5,6 @@ struct ModelView: View {
     @EnvironmentObject var app: AppModel
 
     var body: some View {
-        NavigationStack {
             Form {
                 Section("Model") {
                     row("File", MODEL_FILE)
@@ -39,7 +38,6 @@ struct ModelView: View {
                 }
             }
             .navigationTitle("Model")
-        }
     }
 
     private func row(_ k: String, _ v: String) -> some View {
