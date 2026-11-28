@@ -98,6 +98,14 @@ for line in text.split(separator: "\n") {
         let v = check(it, a, crosscheck: cross, spanPolicy: SpanPolicy(rawValue: s(r, "policy")!)!)
         got = .obj(JObj([("ok", .bool(v.ok)), ("failed", .arr(v.failed.map { .str($0) })),
                          ("clarify_field", v.clarifyField.map { .str($0) } ?? .null)]))
+    case "recompute":
+        let it = item(r)
+        guard let a = parseAction(s(r, "raw")!).0, case .bool(let cross)? = r["crosscheck"] else {
+            got = .str("schema-invalid in Swift"); break
+        }
+        let (f, v) = recompute(it, a, crosscheck: cross)
+        got = .obj(JObj([("pred", .obj(toPred(it.id, f))), ("replaced", .arr(v.replaced.map { .str($0) })),
+                         ("failed", .arr(v.failed.map { .str($0) }))]))
     default:
         continue
     }

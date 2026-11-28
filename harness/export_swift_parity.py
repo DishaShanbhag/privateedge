@@ -22,7 +22,7 @@ from resolver import (combine, local_ref, parse_amount, parse_date, parse_durati
 from run_calendar import local_now, user_message  # noqa: E402
 from chat_prompt import render_llama32  # noqa: E402
 from score_calendar import unsupported_words  # noqa: E402
-from verify_calendar import check  # noqa: E402
+from verify_calendar import check, recompute  # noqa: E402
 
 OUT = ROOT / "ios" / "CalendarCore" / "Fixtures" / "parity.jsonl"
 
@@ -208,6 +208,10 @@ def main():
                     v = check(by_id[iid], action, "nsdatadetector" if cross else None, policy)
                     rows.append({"t": "check", "item": ctx(by_id[iid]), "raw": raw, "policy": policy, "crosscheck": cross,
                                  "out": {"ok": v["ok"], "failed": v["failed"], "clarify_field": v["clarify_field"]}})
+            for cross in (True, False):
+                f, v = recompute(by_id[iid], action, "nsdatadetector" if cross else None)
+                rows.append({"t": "recompute", "item": ctx(by_id[iid]), "raw": raw, "crosscheck": cross,
+                             "out": {"pred": to_pred(iid, f), "replaced": v["replaced"], "failed": v["failed"]}})
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT, "w") as f:

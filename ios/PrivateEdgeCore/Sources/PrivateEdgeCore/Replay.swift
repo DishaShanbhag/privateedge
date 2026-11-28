@@ -197,7 +197,7 @@ public final class ReplayRunner {
     }
 
     private func genFields(_ g: Generation) -> [String: Any] {
-        ["raw_output": g.text, "prompt_tokens": g.promptTokens, "gen_tokens": g.genTokens,
+        ["raw_output": g.text, "prompt_tokens": g.promptTokens, "cached_tokens": g.cachedTokens, "gen_tokens": g.genTokens,
          "first_token_ms": g.firstTokenMs ?? NSNull(), "total_ms": g.totalMs, "decode_tok_s": g.decodeTokS ?? NSNull()]
     }
 }
